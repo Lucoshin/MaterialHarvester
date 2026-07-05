@@ -1,0 +1,45 @@
+# Build output
+bin/
+obj/
+dist/
+publish/
+artifacts/
+
+# IDE and local tooling
+.vs/
+.vscode/
+.idea/
+.codegraph/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Logs and temporary files
+*.log
+*.tmp
+*.temp
+Thumbs.db
+Desktop.ini
+
+# Local notes / generated audit drafts
+adjust.md
+tts_audit.md
+
+# Third-party runtime binaries
+ffmpeg.exe
+ffprobe.exe
+yt-dlp.exe
+
+# Large or externally licensed model files
+models/*.onnx
+!models/README.md
+
+# Generated packages
+*.zip
+*.7z
+*.rar
+
+# Test and runtime scratch data
+Downloads/
+*_Scenes/
