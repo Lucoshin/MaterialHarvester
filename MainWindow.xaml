@@ -70,11 +70,10 @@
                                VerticalAlignment="Center"
                                Margin="0,0,8,0" />
                     <ComboBox x:Name="LanguageCombo"
-                              Width="118"
+                              Width="104"
                               Margin="0,0,10,0"
                               SelectedValuePath="Tag"
                               SelectionChanged="LanguageCombo_SelectionChanged">
-                        <ComboBoxItem Tag="Auto" Content="{DynamicResource Ui.LanguageAuto}" />
                         <ComboBoxItem Tag="Chinese" Content="{DynamicResource Ui.LanguageZh}" />
                         <ComboBoxItem Tag="English" Content="{DynamicResource Ui.LanguageEn}" />
                     </ComboBox>
@@ -290,7 +289,6 @@
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="Auto" />
-                            <RowDefinition Height="Auto" />
                         </Grid.RowDefinitions>
                         <TextBlock Text="{DynamicResource Ui.OutputLocation}" FontSize="11" Foreground="{StaticResource DimTextBrush}" Margin="0,0,0,8" />
                         <Grid Grid.Row="1">
@@ -349,7 +347,7 @@
                             <ColumnDefinition Width="*" />
                         </Grid.ColumnDefinitions>
 
-                        <StackPanel Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="3" Margin="0,0,0,14">
+                        <StackPanel Grid.Row="0" Grid.Column="0">
                             <TextBlock Text="{DynamicResource Ui.SplitMode}"
                                        FontSize="11"
                                        Foreground="{StaticResource DimTextBrush}"
@@ -379,7 +377,25 @@
                             </Grid>
                         </StackPanel>
 
-                        <StackPanel Grid.Row="1" Grid.Column="0">
+                        <StackPanel Grid.Row="0" Grid.Column="2">
+                            <TextBlock Text="{DynamicResource Ui.Detector}"
+                                       FontSize="11"
+                                       Foreground="{StaticResource DimTextBrush}"
+                                       Margin="0,0,0,7"
+                                       ToolTip="{DynamicResource Ui.DetectorTooltip}" />
+                            <ComboBox x:Name="DetectorCombo"
+                                      SelectedIndex="0"
+                                      Height="38"
+                                      ToolTip="{DynamicResource Ui.DetectorTooltip}"
+                                      HorizontalAlignment="Stretch">
+                                <ComboBoxItem Content="{DynamicResource Ui.ContentDetector}"
+                                              ToolTip="{DynamicResource Ui.ContentDetectorTooltip}" />
+                                <ComboBoxItem Content="{DynamicResource Ui.AdaptiveDetector}"
+                                              ToolTip="{DynamicResource Ui.AdaptiveDetectorTooltip}" />
+                            </ComboBox>
+                        </StackPanel>
+
+                        <StackPanel Grid.Row="1" Grid.Column="0" Margin="0,12,0,0">
                             <TextBlock x:Name="SensitivityLabel"
                                        Text="{DynamicResource Ui.Sensitivity}"
                                        FontSize="11"
@@ -397,7 +413,7 @@
                             <TextBlock x:Name="SensitivityValue" Text="0.75" FontSize="11" Foreground="{StaticResource MutedTextBrush}" />
                         </StackPanel>
 
-                        <StackPanel Grid.Row="1" Grid.Column="2">
+                        <StackPanel Grid.Row="1" Grid.Column="2" Margin="0,12,0,0">
                             <Grid>
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*" />
@@ -413,17 +429,6 @@
                                     <TextBox x:Name="TxtThreads" Text="3" />
                                 </StackPanel>
                             </Grid>
-                        </StackPanel>
-
-                        <StackPanel Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="3" Margin="0,14,0,0">
-                            <TextBlock Text="{DynamicResource Ui.Detector}" FontSize="11" Foreground="{StaticResource DimTextBrush}" Margin="0,0,0,7" />
-                            <ComboBox x:Name="DetectorCombo"
-                                      SelectedIndex="0"
-                                      Width="360"
-                                      HorizontalAlignment="Left">
-                                <ComboBoxItem Content="{DynamicResource Ui.ContentDetector}" />
-                                <ComboBoxItem Content="{DynamicResource Ui.AdaptiveDetector}" />
-                            </ComboBox>
                         </StackPanel>
                     </Grid>
                 </Grid>
