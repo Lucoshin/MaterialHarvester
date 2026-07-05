@@ -520,7 +520,9 @@ namespace VideoToMaterial
             if (LanguageCombo == null) return;
 
             _isApplyingLanguage = true;
-            LanguageCombo.SelectedValue = preference.ToString();
+            LanguageCombo.SelectedValue = preference == LanguagePreference.Auto
+                ? (LocalizationManager.UseChinese ? LanguagePreference.Chinese.ToString() : LanguagePreference.English.ToString())
+                : preference.ToString();
             _isApplyingLanguage = false;
         }
 
