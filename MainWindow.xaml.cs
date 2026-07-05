@@ -33,6 +33,7 @@ namespace VideoToMaterial
         private HardwareOptimizationService _hardwareOptimizer;
         private EncoderProfile _currentProfile;
         private bool _isBusy;
+        private bool _isApplyingLanguage;
         private GridLength _lastLogRowHeight = new GridLength(1.35, GridUnitType.Star);
 
         public MainWindow()
@@ -47,6 +48,7 @@ namespace VideoToMaterial
             _downloadService = new DownloadService(_ytdlpPath);
             _hardwareOptimizer = new HardwareOptimizationService();
             QueuePreview.ItemsSource = _queuePreviewItems;
+            SelectLanguagePreference(LocalizationManager.Preference);
 
             _videoProcessor.OnLog += Log;
             _videoProcessor.OnProgress += UpdateProgress;
@@ -64,6 +66,9 @@ namespace VideoToMaterial
             UpdateQueueState();
         }
 
+        private static string L(string key) => LocalizationManager.Text(key);
+        private static string LF(string key, params object[] args) => LocalizationManager.Format(key, args);
+
         private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
         {
             bool ffmpegMissing = !File.Exists(_ffmpegPath);
@@ -71,25 +76,25 @@ namespace VideoToMaterial
 
             if (ffmpegMissing)
             {
-                Log("[错误] 未找到 ffmpeg.exe，请将 ffmpeg.exe 放到程序目录或构建输出目录。");
+                Log(L("Log.FFmpegMissing"));
                 UpdateQueueState();
                 return;
             }
 
             if (!File.Exists(_ytdlpPath))
             {
-                Log("[提示] 未找到 yt-dlp.exe，链接下载功能将不可用。");
+                Log(L("Log.YtDlpMissing"));
             }
 
             try
             {
                 _currentProfile = await _ffmpegHelper.DetectBestEncoderAsync();
-                QueueStatus.Text = $"引擎就绪：{_currentProfile.Name}";
+                QueueStatus.Text = LF("Ui.EngineReady", _currentProfile.Name);
                 CalculateSafeThreads();
             }
             catch (Exception ex)
             {
-                Log($"[初始化错误] 编码器检测失败: {ex.Message}");
+                Log(LF("Log.EncoderDetectFailed", ex.Message));
             }
 
             UpdateQueueState();
@@ -125,8 +130,8 @@ namespace VideoToMaterial
         {
             var result = _hardwareOptimizer.CalculateOptimalThreadCount(_currentProfile);
             TxtThreads.Text = result.suggestedCount.ToString();
-            Log($"[系统配置] {result.systemInfo}");
-            Log($"[并发建议] {result.suggestedCount} 路并行 {result.reason}");
+            Log(LF("Log.SystemConfig", result.systemInfo));
+            Log(LF("Log.ThreadSuggestion", result.suggestedCount, result.reason));
         }
 
         private void Window_DragEnter(object sender, DragEventArgs e) => ApplyFileDragEffect(e);
@@ -157,7 +162,7 @@ namespace VideoToMaterial
 
             var dialog = new OpenFileDialog
             {
-                Filter = "Video|*.mp4;*.mkv;*.avi;*.mov;*.flv;*.wmv",
+                Filter = L("Ui.SelectVideoFilter"),
                 Multiselect = true
             };
 
@@ -189,11 +194,11 @@ namespace VideoToMaterial
 
             if (added > 0)
             {
-                DropTitle.Text = $"队列中已有 {_taskQueue.Count} 个视频";
-                TxtOutputDir.Text = string.IsNullOrEmpty(_outputFolderPath) ? "默认同级目录..." : _outputFolderPath;
-                PathHint.Text = "自动创建: ...\\[视频名]_Scenes\\";
+                DropTitle.Text = LF("Ui.DropTitleWithCount", _taskQueue.Count);
+                TxtOutputDir.Text = string.IsNullOrEmpty(_outputFolderPath) ? L("Ui.DefaultOutput") : _outputFolderPath;
+                PathHint.Text = L("Ui.PathHint");
                 UpdateSourcePreviewState();
-                Log($"> 已添加 {added} 个文件。当前队列总数: {_taskQueue.Count}");
+                Log(LF("Log.AddedFiles", added, _taskQueue.Count));
                 UpdateQueueState();
             }
         }
@@ -211,18 +216,18 @@ namespace VideoToMaterial
                 if (_taskQueue.Count == 0)
                 {
                     _outputFolderPath = "";
-                    TxtOutputDir.Text = "默认同级目录...";
+                    TxtOutputDir.Text = L("Ui.DefaultOutput");
                     PathHint.Text = "";
-                    DropTitle.Text = "拖拽视频文件到此处";
+                    DropTitle.Text = L("Ui.DropTitleEmpty");
                 }
                 else
                 {
-                    DropTitle.Text = $"队列中已有 {_taskQueue.Count} 个视频";
+                    DropTitle.Text = LF("Ui.DropTitleWithCount", _taskQueue.Count);
                 }
 
                 UpdateSourcePreviewState();
                 UpdateQueueState();
-                Log($"> 已移除：{item.Name}。当前队列总数: {_taskQueue.Count}");
+                Log(LF("Log.RemovedFile", item.Name, _taskQueue.Count));
             }
         }
 
@@ -247,7 +252,7 @@ namespace VideoToMaterial
         {
             if (!File.Exists(_ffmpegPath))
             {
-                Log($"> 缩略图跳过：未找到 ffmpeg.exe");
+                Log(L("Log.ThumbnailSkipped"));
                 return;
             }
 
@@ -270,7 +275,7 @@ namespace VideoToMaterial
 
                 if (!File.Exists(outputPath))
                 {
-                    Log($"> 缩略图生成失败：{item.Name}{(string.IsNullOrWhiteSpace(error) ? "" : " - " + error.Trim())}");
+                    Log(LF("Log.ThumbnailFailed", item.Name + (string.IsNullOrWhiteSpace(error) ? "" : " - " + error.Trim())));
                     return;
                 }
 
@@ -285,7 +290,7 @@ namespace VideoToMaterial
             }
             catch
             {
-                Log($"> 缩略图生成失败：{item.Name}");
+                Log(LF("Log.ThumbnailFailed", item.Name));
             }
         }
 
@@ -320,7 +325,7 @@ namespace VideoToMaterial
 
             using (var process = Process.Start(startInfo))
             {
-                if (process == null) return "FFmpeg 进程启动失败";
+                if (process == null) return L("Log.FFmpegProcessFailed");
                 string error = await process.StandardError.ReadToEndAsync();
                 await process.WaitForExitAsync();
                 return process.ExitCode == 0 ? "" : error;
@@ -347,7 +352,7 @@ namespace VideoToMaterial
 
             if (!File.Exists(_ytdlpPath))
             {
-                MessageBox.Show(this, "未找到 yt-dlp.exe，请下载后放到程序运行目录。", "缺失组件", MessageBoxButton.OK, MessageBoxImage.Error);
+                MessageBox.Show(this, L("Log.MissingYtDlpMessage"), L("Ui.MissingComponent"), MessageBoxButton.OK, MessageBoxImage.Error);
                 return;
             }
 
@@ -362,7 +367,7 @@ namespace VideoToMaterial
             SetBusy(true);
             Progress.Visibility = Visibility.Visible;
             Progress.IsIndeterminate = true;
-            Log($">>> 正在解析并下载 {urls.Count} 个链接");
+            Log(LF("Log.DownloadParsing", urls.Count));
 
             string downloadDir = string.IsNullOrEmpty(_outputFolderPath) ? Path.Combine(_appDir, "Downloads") : _outputFolderPath;
             Directory.CreateDirectory(downloadDir);
@@ -377,18 +382,18 @@ namespace VideoToMaterial
                     string downloadedFile = await _downloadService.DownloadVideoAsync(url, downloadDir);
                     if (!string.IsNullOrEmpty(downloadedFile) && File.Exists(downloadedFile))
                     {
-                        Log($"> 下载成功: {Path.GetFileName(downloadedFile)}");
+                        Log(LF("Log.DownloadSuccess", Path.GetFileName(downloadedFile)));
                         AddFilesToQueue(new[] { downloadedFile });
                     }
                     else
                     {
-                        Log("[错误] 下载失败，请检查链接或网络。");
+                        Log(L("Log.DownloadFailed"));
                     }
                 }
             }
             catch (Exception ex)
             {
-                Log($"[严重错误] {ex.Message}");
+                Log(LF("Log.Fatal", ex.Message));
             }
             finally
             {
@@ -431,7 +436,7 @@ namespace VideoToMaterial
             DockPanel header = new DockPanel { Margin = new Thickness(0, 0, 0, 16) };
             TextBlock title = new TextBlock
             {
-                Text = "添加网络视频",
+                Text = L("Ui.AddNetworkVideo"),
                 FontSize = 16,
                 FontWeight = FontWeights.SemiBold,
                 Foreground = (System.Windows.Media.Brush)FindResource("TextBrush")
@@ -453,7 +458,7 @@ namespace VideoToMaterial
 
             TextBlock label = new TextBlock 
             { 
-                Text = "粘贴视频链接（支持多行或空格分隔）", 
+                Text = L("Ui.PasteVideoLinks"), 
                 FontSize = 13, 
                 Foreground = (System.Windows.Media.Brush)FindResource("TextBrush"),
                 Margin = new Thickness(0, 0, 0, 10) 
@@ -468,8 +473,8 @@ namespace VideoToMaterial
                 MinHeight = 160
             };
             StackPanel actions = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
-            Button cancel = new Button { Content = "取消", Style = (Style)FindResource("SecondaryButton"), Margin = new Thickness(0, 0, 10, 0), MinWidth = 86 };
-            Button ok = new Button { Content = "添加并解析", Style = (Style)FindResource("PrimaryButton"), Padding = new Thickness(18, 8, 18, 8), MinWidth = 118 };
+            Button cancel = new Button { Content = L("Ui.Cancel"), Style = (Style)FindResource("SecondaryButton"), Margin = new Thickness(0, 0, 10, 0), MinWidth = 86 };
+            Button ok = new Button { Content = L("Ui.AddAndParse"), Style = (Style)FindResource("PrimaryButton"), Padding = new Thickness(18, 8, 18, 8), MinWidth = 118 };
 
             string result = null;
             cancel.Click += (s, e) => prompt.Close();
@@ -510,18 +515,56 @@ namespace VideoToMaterial
                 .ToList();
         }
 
+        private void SelectLanguagePreference(LanguagePreference preference)
+        {
+            if (LanguageCombo == null) return;
+
+            _isApplyingLanguage = true;
+            LanguageCombo.SelectedValue = preference.ToString();
+            _isApplyingLanguage = false;
+        }
+
+        private void LanguageCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (_isApplyingLanguage || LanguageCombo.SelectedValue == null) return;
+
+            if (Enum.TryParse(LanguageCombo.SelectedValue.ToString(), out LanguagePreference preference))
+            {
+                LocalizationManager.SetPreference(preference, save: true);
+                ApplyLocalizedState();
+            }
+        }
+
+        private void ApplyLocalizedState()
+        {
+            UpdateSplitModeControls();
+            UpdateQueueState();
+
+            DropTitle.Text = _taskQueue.Count > 0
+                ? LF("Ui.DropTitleWithCount", _taskQueue.Count)
+                : L("Ui.DropTitleEmpty");
+
+            if (string.IsNullOrEmpty(_outputFolderPath))
+            {
+                TxtOutputDir.Text = L("Ui.DefaultOutput");
+            }
+
+            PathHint.Text = _taskQueue.Count > 0 ? L("Ui.PathHint") : "";
+            BtnToggleLog.Content = LogDrawer.Visibility == Visibility.Visible ? L("Ui.HideLog") : L("Ui.ShowLog");
+        }
+
         private void BrowseOutput_Click(object sender, RoutedEventArgs e)
         {
             var dialog = new OpenFolderDialog
             {
-                Title = "选择输出目录"
+                Title = L("Ui.SelectOutputDir")
             };
 
             if (dialog.ShowDialog(this) == true)
             {
                 _outputFolderPath = dialog.FolderName;
                 TxtOutputDir.Text = _outputFolderPath;
-                PathHint.Text = _taskQueue.Count > 0 ? "自动创建: ...\\[视频名]_Scenes\\" : "";
+                PathHint.Text = _taskQueue.Count > 0 ? L("Ui.PathHint") : "";
             }
         }
 
@@ -536,12 +579,12 @@ namespace VideoToMaterial
             if (_taskQueue.Count == 0 || _isBusy) return;
             if (_currentProfile == null)
             {
-                MessageBox.Show(this, "编码器尚未初始化，请确认 ffmpeg.exe 可用。", "无法开始", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show(this, L("Log.EncoderNotReady"), L("Ui.CannotStart"), MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
 
-            if (!TryReadInt(TxtThreads.Text, 1, 16, out int maxThreads, "并发数")) return;
-            if (!TryReadDouble(TxtDuration.Text, 1, 600, out double fixedDuration, "时长")) return;
+            if (!TryReadInt(TxtThreads.Text, 1, 16, out int maxThreads, L("Param.Threads"))) return;
+            if (!TryReadDouble(TxtDuration.Text, 1, 600, out double fixedDuration, L("Param.Duration"))) return;
 
             var options = new ProcessingOptions
             {
@@ -581,16 +624,16 @@ namespace VideoToMaterial
                     Directory.CreateDirectory(outDir);
                     _outputFolderPath = baseOutput;
 
-                    Log($">>> 正在处理 [{count}/{total}]: {name}");
+                    Log(LF("Log.Processing", count, total, name));
                     await _videoProcessor.ProcessSingleVideoAsync(video, outDir, options);
                     UpdateQueueState();
                 }
 
                 SystemSounds.Exclamation.Play();
                 BtnOpenDir.Visibility = Directory.Exists(_outputFolderPath) ? Visibility.Visible : Visibility.Collapsed;
-                DropTitle.Text = "拖拽视频文件到此处";
+                DropTitle.Text = L("Ui.DropTitleEmpty");
                 PathHint.Text = "";
-                Log("> 全部任务完成。");
+                Log(L("Log.AllDone"));
             }
             catch (Exception ex)
             {
@@ -610,14 +653,14 @@ namespace VideoToMaterial
         private bool TryReadInt(string text, int min, int max, out int value, string label)
         {
             if (int.TryParse(text, out value) && value >= min && value <= max) return true;
-            MessageBox.Show(this, $"{label} 必须是 {min}-{max} 的整数。", "参数无效", MessageBoxButton.OK, MessageBoxImage.Warning);
+            MessageBox.Show(this, LF("Log.InvalidInteger", label, min, max), L("Ui.InvalidParameter"), MessageBoxButton.OK, MessageBoxImage.Warning);
             return false;
         }
 
         private bool TryReadDouble(string text, double min, double max, out double value, string label)
         {
             if (double.TryParse(text, out value) && value >= min && value <= max) return true;
-            MessageBox.Show(this, $"{label} 必须是 {min}-{max} 的数字。", "参数无效", MessageBoxButton.OK, MessageBoxImage.Warning);
+            MessageBox.Show(this, LF("Log.InvalidNumber", label, min, max), L("Ui.InvalidParameter"), MessageBoxButton.OK, MessageBoxImage.Warning);
             return false;
         }
 
@@ -631,7 +674,7 @@ namespace VideoToMaterial
             TxtDuration.IsEnabled = true;
             SensitivitySlider.IsEnabled = !fixedMode;
             DetectorCombo.IsEnabled = !fixedMode;
-            DurationLabel.Text = fixedMode ? "每段时长(秒)" : "最小时长(秒)";
+            DurationLabel.Text = fixedMode ? L("Ui.FixedDurationLabel") : L("Ui.MinimumDurationLabel");
             SensitivityLabel.Foreground = fixedMode
                 ? (System.Windows.Media.Brush)FindResource("DimTextBrush")
                 : (System.Windows.Media.Brush)FindResource("MutedTextBrush");
@@ -654,7 +697,7 @@ namespace VideoToMaterial
                 LogDrawer.Visibility = Visibility.Visible;
                 LogSplitter.Visibility = Visibility.Visible;
                 LogRow.Height = _lastLogRowHeight.Value > 0 ? _lastLogRowHeight : new GridLength(1.35, GridUnitType.Star);
-                BtnToggleLog.Content = "隐藏日志";
+                BtnToggleLog.Content = L("Ui.HideLog");
             }
             else
             {
@@ -662,7 +705,7 @@ namespace VideoToMaterial
                 LogDrawer.Visibility = Visibility.Collapsed;
                 LogSplitter.Visibility = Visibility.Collapsed;
                 LogRow.Height = new GridLength(0);
-                BtnToggleLog.Content = "显示日志";
+                BtnToggleLog.Content = L("Ui.ShowLog");
             }
         }
 
@@ -673,21 +716,21 @@ namespace VideoToMaterial
             _taskQueue.Clear();
             _queuePreviewItems.Clear();
             _outputFolderPath = "";
-            TxtOutputDir.Text = "默认同级目录...";
+            TxtOutputDir.Text = L("Ui.DefaultOutput");
             PathHint.Text = "";
-            DropTitle.Text = "拖拽视频文件到此处";
+            DropTitle.Text = L("Ui.DropTitleEmpty");
             Progress.Value = 0;
             Progress.Visibility = Visibility.Collapsed;
             BtnOpenDir.Visibility = Visibility.Collapsed;
             UpdateSourcePreviewState();
-            Log("> 任务队列已清空。");
+            Log(L("Log.QueueCleared"));
             UpdateQueueState();
         }
 
         private void FixDependency_Click(object sender, RoutedEventArgs e)
         {
             Process.Start(new ProcessStartInfo("explorer.exe", AppContext.BaseDirectory) { UseShellExecute = true });
-            Log("> 请将 ffmpeg.exe、ffprobe.exe 和 yt-dlp.exe 放入程序目录后重启应用。");
+            Log(L("Log.DependencyHelp"));
         }
 
         private void SetBusy(bool busy)
@@ -709,8 +752,8 @@ namespace VideoToMaterial
         {
             BtnStart.IsEnabled = !_isBusy && _taskQueue.Count > 0 && File.Exists(_ffmpegPath);
             QueueStatus.Text = _taskQueue.Count > 0
-                ? $"已添加 {_taskQueue.Count} 个文件"
-                : (_currentProfile != null ? $"引擎就绪：{_currentProfile.Name}" : "队列为空");
+                ? LF("Ui.AddedFilesStatus", _taskQueue.Count)
+                : (_currentProfile != null ? LF("Ui.EngineReady", _currentProfile.Name) : L("Ui.QueueEmpty"));
         }
 
         private void UpdateProgress(int current, int total)
