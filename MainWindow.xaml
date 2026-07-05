@@ -1,7 +1,7 @@
 <Window x:Class="VideoToMaterial.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Material Harvester"
+        Title="{DynamicResource Ui.WindowTitle}"
         Width="1180"
         Height="760"
         MinWidth="980"
@@ -27,7 +27,7 @@
             <DockPanel LastChildFill="False">
                 <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" VerticalAlignment="Center">
                     <TextBlock Text="!" Foreground="#FB7185" FontWeight="Bold" FontSize="14" Margin="0,0,10,0" />
-                    <TextBlock Text="环境缺失：未检测到依赖项 FFmpeg，核心切片功能将无法使用"
+                    <TextBlock Text="{DynamicResource Ui.DependencyMissing}"
                                Foreground="#FDA4AF"
                                FontSize="12"
                                VerticalAlignment="Center" />
@@ -39,7 +39,7 @@
                         Foreground="#FDA4AF"
                         Padding="12,5"
                         FontSize="11"
-                        Content="打开依赖目录"
+                        Content="{DynamicResource Ui.OpenDependencyDir}"
                         Click="FixDependency_Click" />
             </DockPanel>
         </Border>
@@ -58,27 +58,41 @@
                 <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" VerticalAlignment="Center">
                     <Ellipse Width="8" Height="8" Fill="{StaticResource EmeraldBrush}" Margin="0,0,10,0" />
                     <TextBlock x:Name="QueueStatus"
-                               Text="队列为空"
+                               Text="{DynamicResource Ui.QueueEmpty}"
                                FontSize="12"
                                Foreground="{StaticResource MutedTextBrush}"
                                VerticalAlignment="Center" />
                 </StackPanel>
                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                    <TextBlock Text="{DynamicResource Ui.Language}"
+                               FontSize="11"
+                               Foreground="{StaticResource DimTextBrush}"
+                               VerticalAlignment="Center"
+                               Margin="0,0,8,0" />
+                    <ComboBox x:Name="LanguageCombo"
+                              Width="118"
+                              Margin="0,0,10,0"
+                              SelectedValuePath="Tag"
+                              SelectionChanged="LanguageCombo_SelectionChanged">
+                        <ComboBoxItem Tag="Auto" Content="{DynamicResource Ui.LanguageAuto}" />
+                        <ComboBoxItem Tag="Chinese" Content="{DynamicResource Ui.LanguageZh}" />
+                        <ComboBoxItem Tag="English" Content="{DynamicResource Ui.LanguageEn}" />
+                    </ComboBox>
                     <Button x:Name="BtnToggleLog"
                             Style="{StaticResource SecondaryButton}"
-                            Content="隐藏日志"
+                            Content="{DynamicResource Ui.HideLog}"
                             MinWidth="92"
                             Margin="0,0,10,0"
                             Click="ToggleLog_Click" />
                     <Button x:Name="BtnReset"
                             Style="{StaticResource GhostDangerButton}"
-                            Content="重置队列"
+                            Content="{DynamicResource Ui.ResetQueue}"
                             MinWidth="112"
                             Margin="0,0,10,0"
                             Click="Reset_Click" />
                     <Button x:Name="BtnStart"
                             Style="{StaticResource PrimaryButton}"
-                            Content="开始批量处理"
+                            Content="{DynamicResource Ui.StartBatch}"
                             MinWidth="210"
                             Height="46"
                             IsEnabled="False"
@@ -114,12 +128,12 @@
                             </Grid>
                         </Viewbox>
                         <TextBlock x:Name="DropTitle"
-                                   Text="拖拽视频文件到此处"
+                                   Text="{DynamicResource Ui.DropTitleEmpty}"
                                    Foreground="#E4E4E7"
                                    FontSize="18"
                                    FontWeight="SemiBold"
                                    HorizontalAlignment="Center" />
-                        <TextBlock Text="支持多选本地视频，添加后将在此处生成队列预览"
+                        <TextBlock Text="{DynamicResource Ui.DropSubtitle}"
                                    Foreground="#A1A1AA"
                                    FontSize="13"
                                    HorizontalAlignment="Center"
@@ -128,7 +142,7 @@
                                 Margin="0,14,0,0"
                                 HorizontalAlignment="Center"
                                 Click="AddLink_Click">
-                            <TextBlock Text="或 粘贴一个/多个视频链接" FontSize="13" TextDecorations="Underline" />
+                            <TextBlock Text="{DynamicResource Ui.AddLink}" FontSize="13" TextDecorations="Underline" />
                         </Button>
                     </StackPanel>
                     <ScrollViewer x:Name="QueueScroll"
@@ -162,7 +176,7 @@
                                                     <Grid>
                                                         <Grid x:Name="ThumbnailPlaceholder">
                                                             <Rectangle Fill="#18181B" Margin="12,14,12,14" RadiusX="4" RadiusY="4" />
-                                                            <TextBlock Text="预览生成中"
+                                                            <TextBlock Text="{DynamicResource Ui.PreviewLoading}"
                                                                        Foreground="#6EE7B7"
                                                                        FontSize="13"
                                                                        FontWeight="SemiBold"
@@ -209,7 +223,7 @@
                                                     VerticalAlignment="Top"
                                                     Margin="0,-7,-7,0"
                                                     Content="×"
-                                                    ToolTip="移除此视频"
+                                                    ToolTip="{DynamicResource Ui.RemoveVideo}"
                                                     Click="RemoveVideo_Click"
                                                     Background="#E11D48"
                                                     BorderBrush="#FDA4AF"
@@ -278,7 +292,7 @@
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="Auto" />
                         </Grid.RowDefinitions>
-                        <TextBlock Text="输出位置" FontSize="11" Foreground="{StaticResource DimTextBrush}" Margin="0,0,0,8" />
+                        <TextBlock Text="{DynamicResource Ui.OutputLocation}" FontSize="11" Foreground="{StaticResource DimTextBrush}" Margin="0,0,0,8" />
                         <Grid Grid.Row="1">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*" />
@@ -287,17 +301,17 @@
                             </Grid.ColumnDefinitions>
                             <TextBox x:Name="TxtOutputDir"
                                      Grid.Column="0"
-                                     Text="默认同级目录..."
+                                     Text="{DynamicResource Ui.DefaultOutput}"
                                      IsReadOnly="True"
                                      Margin="0,0,10,0" />
                             <Button Grid.Column="1"
                                     Style="{StaticResource SecondaryButton}"
-                                    Content="浏览"
+                                    Content="{DynamicResource Ui.Browse}"
                                     Click="BrowseOutput_Click" />
                             <Button x:Name="BtnOpenDir"
                                     Grid.Column="2"
                                     Style="{StaticResource SecondaryButton}"
-                                    Content="打开"
+                                    Content="{DynamicResource Ui.Open}"
                                     Margin="8,0,0,0"
                                     Visibility="Collapsed"
                                     Click="OpenOutput_Click" />
@@ -309,15 +323,15 @@
                                 <ColumnDefinition Width="*" />
                             </Grid.ColumnDefinitions>
                             <StackPanel Grid.Column="0">
-                                <TextBlock Text="输出规则" FontSize="11" Foreground="{StaticResource DimTextBrush}" Margin="0,0,0,7" />
+                                <TextBlock Text="{DynamicResource Ui.OutputRule}" FontSize="11" Foreground="{StaticResource DimTextBrush}" Margin="0,0,0,7" />
                                 <Border Background="#18181B" BorderBrush="#2E2E33" BorderThickness="1" CornerRadius="8" Padding="12,9">
-                                    <TextBlock x:Name="PathHint" Text="自动创建: ...\[视频名]_Scenes\" FontSize="11" Foreground="{StaticResource MutedTextBrush}" TextWrapping="Wrap" />
+                                    <TextBlock x:Name="PathHint" Text="{DynamicResource Ui.PathHint}" FontSize="11" Foreground="{StaticResource MutedTextBrush}" TextWrapping="Wrap" />
                                 </Border>
                             </StackPanel>
                             <StackPanel Grid.Column="2">
-                                <TextBlock Text="音频" FontSize="11" Foreground="{StaticResource DimTextBrush}" Margin="0,0,0,7" />
+                                <TextBlock Text="{DynamicResource Ui.Audio}" FontSize="11" Foreground="{StaticResource DimTextBrush}" Margin="0,0,0,7" />
                                 <Border Background="#18181B" BorderBrush="#2E2E33" BorderThickness="1" CornerRadius="8" Padding="12,9">
-                                    <CheckBox x:Name="ChkMute" Content="静音处理" />
+                                    <CheckBox x:Name="ChkMute" Content="{DynamicResource Ui.Mute}" />
                                 </Border>
                             </StackPanel>
                         </Grid>
@@ -336,11 +350,11 @@
                         </Grid.ColumnDefinitions>
 
                         <StackPanel Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="3" Margin="0,0,0,14">
-                            <TextBlock Text="切片模式"
+                            <TextBlock Text="{DynamicResource Ui.SplitMode}"
                                        FontSize="11"
                                        Foreground="{StaticResource DimTextBrush}"
                                        Margin="0,0,0,7"
-                                       ToolTip="选择素材切分方式：智能场景适合自动找镜头边界，固定时长适合批量生成等长片段。" />
+                                       ToolTip="{DynamicResource Ui.SplitModeTooltip}" />
                             <Grid>
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*" />
@@ -350,35 +364,35 @@
                                 <RadioButton x:Name="SmartModeRadio"
                                              Grid.Column="0"
                                              GroupName="SplitMode"
-                                             Content="智能场景"
+                                             Content="{DynamicResource Ui.SmartScene}"
                                              IsChecked="True"
                                              Style="{StaticResource ModeRadioButton}"
-                                             ToolTip="根据画面变化自动识别镜头切点，并结合相似度分析减少重复片段。适合从长视频中提炼可用素材。"
+                                             ToolTip="{DynamicResource Ui.SmartTooltip}"
                                              Checked="SplitMode_Checked" />
                                 <RadioButton x:Name="FixedModeRadio"
                                              Grid.Column="2"
                                              GroupName="SplitMode"
-                                             Content="固定时长"
+                                             Content="{DynamicResource Ui.FixedDuration}"
                                              Style="{StaticResource ModeRadioButton}"
-                                             ToolTip="按设定秒数均匀切片，不做场景识别和智能去重。适合需要固定长度素材的批量处理。"
+                                             ToolTip="{DynamicResource Ui.FixedTooltip}"
                                              Checked="SplitMode_Checked" />
                             </Grid>
                         </StackPanel>
 
                         <StackPanel Grid.Row="1" Grid.Column="0">
                             <TextBlock x:Name="SensitivityLabel"
-                                       Text="灵敏度"
+                                       Text="{DynamicResource Ui.Sensitivity}"
                                        FontSize="11"
                                        Foreground="{StaticResource DimTextBrush}"
                                        Margin="0,0,0,7"
-                                       ToolTip="控制智能场景对画面变化的敏感程度。数值越高越容易切出细小变化；切得太碎就调低，漏切就调高。" />
+                                       ToolTip="{DynamicResource Ui.SensitivityTooltip}" />
                             <Slider x:Name="SensitivitySlider"
                                     Minimum="0.01"
                                     Maximum="1"
                                     Value="0.75"
                                     TickFrequency="0.01"
                                     IsSnapToTickEnabled="True"
-                                    ToolTip="推荐 0.75。提高会检测更多镜头变化，降低会合并更多相近片段。"
+                                    ToolTip="{DynamicResource Ui.SensitivitySliderTooltip}"
                                     ValueChanged="SensitivitySlider_ValueChanged" />
                             <TextBlock x:Name="SensitivityValue" Text="0.75" FontSize="11" Foreground="{StaticResource MutedTextBrush}" />
                         </StackPanel>
@@ -391,24 +405,24 @@
                                     <ColumnDefinition Width="*" />
                                 </Grid.ColumnDefinitions>
                                 <StackPanel Grid.Column="0">
-                                    <TextBlock x:Name="DurationLabel" Text="时长(秒)" FontSize="11" Foreground="{StaticResource DimTextBrush}" Margin="0,0,0,7" />
+                                    <TextBlock x:Name="DurationLabel" Text="{DynamicResource Ui.DurationLabel}" FontSize="11" Foreground="{StaticResource DimTextBrush}" Margin="0,0,0,7" />
                                     <TextBox x:Name="TxtDuration" Text="10" />
                                 </StackPanel>
                                 <StackPanel Grid.Column="2">
-                                    <TextBlock Text="并发数" FontSize="11" Foreground="{StaticResource DimTextBrush}" Margin="0,0,0,7" />
+                                    <TextBlock Text="{DynamicResource Ui.Threads}" FontSize="11" Foreground="{StaticResource DimTextBrush}" Margin="0,0,0,7" />
                                     <TextBox x:Name="TxtThreads" Text="3" />
                                 </StackPanel>
                             </Grid>
                         </StackPanel>
 
                         <StackPanel Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="3" Margin="0,14,0,0">
-                            <TextBlock Text="检测器" FontSize="11" Foreground="{StaticResource DimTextBrush}" Margin="0,0,0,7" />
+                            <TextBlock Text="{DynamicResource Ui.Detector}" FontSize="11" Foreground="{StaticResource DimTextBrush}" Margin="0,0,0,7" />
                             <ComboBox x:Name="DetectorCombo"
                                       SelectedIndex="0"
                                       Width="360"
                                       HorizontalAlignment="Left">
-                                <ComboBoxItem Content="ContentDetector 内容变化" />
-                                <ComboBoxItem Content="AdaptiveDetector 自适应智能" />
+                                <ComboBoxItem Content="{DynamicResource Ui.ContentDetector}" />
+                                <ComboBoxItem Content="{DynamicResource Ui.AdaptiveDetector}" />
                             </ComboBox>
                         </StackPanel>
                     </Grid>
@@ -438,7 +452,7 @@
                         <RowDefinition Height="*" />
                     </Grid.RowDefinitions>
                     <DockPanel Grid.Row="0" Margin="0,0,0,8">
-                        <TextBlock Text="运行日志" DockPanel.Dock="Left" Foreground="#A1A1AA" FontSize="11" FontWeight="SemiBold" />
+                        <TextBlock Text="{DynamicResource Ui.RunLog}" DockPanel.Dock="Left" Foreground="#A1A1AA" FontSize="11" FontWeight="SemiBold" />
                         <ProgressBar x:Name="Progress"
                                      DockPanel.Dock="Right"
                                      Width="260"

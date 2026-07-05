@@ -43,11 +43,11 @@ namespace VideoToMaterial
                 string finalPath = "";
                 List<string> errors = new List<string>();
 
-                Log($"执行下载指令: {_ytdlpPath} {args}");
+                Log(LocalizationManager.Format("Log.DownloadCommand", _ytdlpPath, args));
 
                 using (Process p = Process.Start(psi))
                 {
-                    if (p == null) throw new InvalidOperationException("无法启动 yt-dlp 进程。");
+                    if (p == null) throw new InvalidOperationException(LocalizationManager.Text("Log.YtDlpStartFailed"));
 
                     while (!p.StandardOutput.EndOfStream)
                     {
@@ -81,7 +81,7 @@ namespace VideoToMaterial
                         string errorMsg = string.Join("\n", errors.Where(e => !string.IsNullOrWhiteSpace(e)));
                         if (string.IsNullOrEmpty(finalPath))
                         {
-                            throw new Exception($"yt-dlp 失败 (代码 {p.ExitCode}):\n{errorMsg}");
+                            throw new Exception(LocalizationManager.Format("Log.YtDlpFailed", p.ExitCode, errorMsg));
                         }
                     }
                 }
