@@ -1,0 +1,469 @@
+<Window x:Class="VideoToMaterial.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Material Harvester"
+        Width="1180"
+        Height="760"
+        MinWidth="980"
+        MinHeight="680"
+        WindowStartupLocation="CenterScreen"
+        AllowDrop="True"
+        DragEnter="Window_DragEnter"
+        Drop="Window_Drop">
+    <Grid Background="{StaticResource BgBrush}">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <Border x:Name="DependencyBanner"
+                Grid.Row="0"
+                Visibility="Collapsed"
+                Background="#401E1B22"
+                BorderBrush="#7F9F1239"
+                BorderThickness="0,0,0,1"
+                Padding="16,10"
+                Panel.ZIndex="50">
+            <DockPanel LastChildFill="False">
+                <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" VerticalAlignment="Center">
+                    <TextBlock Text="!" Foreground="#FB7185" FontWeight="Bold" FontSize="14" Margin="0,0,10,0" />
+                    <TextBlock Text="环境缺失：未检测到依赖项 FFmpeg，核心切片功能将无法使用"
+                               Foreground="#FDA4AF"
+                               FontSize="12"
+                               VerticalAlignment="Center" />
+                </StackPanel>
+                <Button DockPanel.Dock="Right"
+                        Style="{StaticResource SecondaryButton}"
+                        Background="#4C881337"
+                        BorderBrush="#7FFECDD3"
+                        Foreground="#FDA4AF"
+                        Padding="12,5"
+                        FontSize="11"
+                        Content="打开依赖目录"
+                        Click="FixDependency_Click" />
+            </DockPanel>
+        </Border>
+
+        <Grid Grid.Row="1" Margin="24">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition x:Name="SourceRow" Height="5*" MinHeight="180" />
+                <RowDefinition Height="8" />
+                <RowDefinition x:Name="ConfigRow" Height="2*" MinHeight="165" />
+                <RowDefinition Height="8" />
+                <RowDefinition x:Name="LogRow" Height="1.35*" MinHeight="110" />
+            </Grid.RowDefinitions>
+
+            <DockPanel Grid.Row="0" Margin="0,0,0,14" LastChildFill="False">
+                <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Ellipse Width="8" Height="8" Fill="{StaticResource EmeraldBrush}" Margin="0,0,10,0" />
+                    <TextBlock x:Name="QueueStatus"
+                               Text="队列为空"
+                               FontSize="12"
+                               Foreground="{StaticResource MutedTextBrush}"
+                               VerticalAlignment="Center" />
+                </StackPanel>
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Button x:Name="BtnToggleLog"
+                            Style="{StaticResource SecondaryButton}"
+                            Content="隐藏日志"
+                            MinWidth="92"
+                            Margin="0,0,10,0"
+                            Click="ToggleLog_Click" />
+                    <Button x:Name="BtnReset"
+                            Style="{StaticResource GhostDangerButton}"
+                            Content="重置队列"
+                            MinWidth="112"
+                            Margin="0,0,10,0"
+                            Click="Reset_Click" />
+                    <Button x:Name="BtnStart"
+                            Style="{StaticResource PrimaryButton}"
+                            Content="开始批量处理"
+                            MinWidth="210"
+                            Height="46"
+                            IsEnabled="False"
+                            Click="Start_Click" />
+                </StackPanel>
+            </DockPanel>
+
+            <Border x:Name="DropZone"
+                    Grid.Row="1"
+                    CornerRadius="14"
+                    BorderThickness="2"
+                    BorderBrush="#3F3F46"
+                    Background="#7F18181B"
+                    Padding="32"
+                    Cursor="Hand"
+                    AllowDrop="True"
+                    DragEnter="DropZone_DragEnter"
+                    Drop="DropZone_Drop"
+                    MouseLeftButtonUp="DropZone_MouseLeftButtonUp">
+                <Grid>
+                    <StackPanel x:Name="EmptySourcePanel"
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center"
+                                IsHitTestVisible="False">
+                        <Viewbox Width="72" Height="72" Margin="0,0,0,20">
+                            <Grid Width="64" Height="64">
+                                <Path Stroke="#A1A1AA" StrokeThickness="2.2" Fill="Transparent" StrokeLineJoin="Round"
+                                      Data="M10,22 L10,50 L54,50 L54,24 L32,24 L27,16 L14,16 C11.8,16 10,17.8 10,20 Z" />
+                                <Path Stroke="#71717A" StrokeThickness="1.4" Fill="Transparent"
+                                      Data="M18,31 L46,31 M18,38 L46,38 M18,45 L34,45" />
+                                <Path Stroke="#10B981" StrokeThickness="1.8" Fill="Transparent"
+                                      Data="M10,25 L54,25" Opacity="0.75" />
+                            </Grid>
+                        </Viewbox>
+                        <TextBlock x:Name="DropTitle"
+                                   Text="拖拽视频文件到此处"
+                                   Foreground="#E4E4E7"
+                                   FontSize="18"
+                                   FontWeight="SemiBold"
+                                   HorizontalAlignment="Center" />
+                        <TextBlock Text="支持多选本地视频，添加后将在此处生成队列预览"
+                                   Foreground="#A1A1AA"
+                                   FontSize="13"
+                                   HorizontalAlignment="Center"
+                                   Margin="0,8,0,0" />
+                        <Button Style="{StaticResource LinkButton}"
+                                Margin="0,14,0,0"
+                                HorizontalAlignment="Center"
+                                Click="AddLink_Click">
+                            <TextBlock Text="或 粘贴一个/多个视频链接" FontSize="13" TextDecorations="Underline" />
+                        </Button>
+                    </StackPanel>
+                    <ScrollViewer x:Name="QueueScroll"
+                                  Visibility="Collapsed"
+                                  VerticalScrollBarVisibility="Auto"
+                                  HorizontalScrollBarVisibility="Disabled">
+                        <ItemsControl x:Name="QueuePreview">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <WrapPanel />
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border x:Name="QueueCard"
+                                            Width="176"
+                                            Height="150"
+                                            Margin="10"
+                                            Padding="10"
+                                            CornerRadius="10"
+                                            Background="#1A1A1D"
+                                            BorderBrush="#2E2E33"
+                                            BorderThickness="1">
+                                        <Grid>
+                                            <StackPanel>
+                                                <Border Height="88"
+                                                        CornerRadius="8"
+                                                        Background="#26262A"
+                                                        BorderBrush="#3F3F46"
+                                                        BorderThickness="1">
+                                                    <Grid>
+                                                        <Grid x:Name="ThumbnailPlaceholder">
+                                                            <Rectangle Fill="#18181B" Margin="12,14,12,14" RadiusX="4" RadiusY="4" />
+                                                            <TextBlock Text="预览生成中"
+                                                                       Foreground="#6EE7B7"
+                                                                       FontSize="13"
+                                                                       FontWeight="SemiBold"
+                                                                       HorizontalAlignment="Center"
+                                                                       VerticalAlignment="Center" />
+                                                            <StackPanel Orientation="Vertical" HorizontalAlignment="Left" Margin="7,10,0,10">
+                                                                <Rectangle Width="8" Height="8" Fill="#E4E4E7" RadiusX="2" RadiusY="2" Margin="0,0,0,8" />
+                                                                <Rectangle Width="8" Height="8" Fill="#E4E4E7" RadiusX="2" RadiusY="2" Margin="0,0,0,8" />
+                                                                <Rectangle Width="8" Height="8" Fill="#E4E4E7" RadiusX="2" RadiusY="2" />
+                                                            </StackPanel>
+                                                            <StackPanel Orientation="Vertical" HorizontalAlignment="Right" Margin="0,10,7,10">
+                                                                <Rectangle Width="8" Height="8" Fill="#E4E4E7" RadiusX="2" RadiusY="2" Margin="0,0,0,8" />
+                                                                <Rectangle Width="8" Height="8" Fill="#E4E4E7" RadiusX="2" RadiusY="2" Margin="0,0,0,8" />
+                                                                <Rectangle Width="8" Height="8" Fill="#E4E4E7" RadiusX="2" RadiusY="2" />
+                                                            </StackPanel>
+                                                        </Grid>
+                                                        <Image Source="{Binding Thumbnail}"
+                                                               Stretch="UniformToFill"
+                                                               RenderOptions.BitmapScalingMode="HighQuality" />
+                                                        <Border VerticalAlignment="Bottom"
+                                                                Background="#99000000"
+                                                                Padding="6,2">
+                                                            <TextBlock Text="{Binding Extension}"
+                                                                       Foreground="#D4D4D8"
+                                                                       FontSize="10"
+                                                                       FontWeight="SemiBold" />
+                                                        </Border>
+                                                    </Grid>
+                                                </Border>
+                                                <TextBlock Text="{Binding Name}"
+                                                           Foreground="#F4F4F5"
+                                                           FontSize="12"
+                                                           TextAlignment="Center"
+                                                           TextWrapping="Wrap"
+                                                           MaxHeight="38"
+                                                           Margin="0,9,0,0" />
+                                            </StackPanel>
+
+                                            <Button x:Name="RemoveVideoButton"
+                                                    Width="26"
+                                                    Height="26"
+                                                    Padding="0"
+                                                    HorizontalAlignment="Right"
+                                                    VerticalAlignment="Top"
+                                                    Margin="0,-7,-7,0"
+                                                    Content="×"
+                                                    ToolTip="移除此视频"
+                                                    Click="RemoveVideo_Click"
+                                                    Background="#E11D48"
+                                                    BorderBrush="#FDA4AF"
+                                                    Foreground="White"
+                                                    FontSize="18"
+                                                    FontWeight="SemiBold"
+                                                    Cursor="Hand"
+                                                    Opacity="0">
+                                                <Button.Template>
+                                                    <ControlTemplate TargetType="Button">
+                                                        <Border x:Name="Root"
+                                                                Background="{TemplateBinding Background}"
+                                                                BorderBrush="{TemplateBinding BorderBrush}"
+                                                                BorderThickness="1"
+                                                                CornerRadius="13">
+                                                            <ContentPresenter HorizontalAlignment="Center"
+                                                                              VerticalAlignment="Center"
+                                                                              Margin="0,-2,0,0" />
+                                                        </Border>
+                                                        <ControlTemplate.Triggers>
+                                                            <Trigger Property="IsMouseOver" Value="True">
+                                                                <Setter TargetName="Root" Property="Background" Value="#F43F5E" />
+                                                            </Trigger>
+                                                        </ControlTemplate.Triggers>
+                                                    </ControlTemplate>
+                                                </Button.Template>
+                                            </Button>
+                                        </Grid>
+                                    </Border>
+                                    <DataTemplate.Triggers>
+                                        <Trigger SourceName="QueueCard" Property="IsMouseOver" Value="True">
+                                            <Setter TargetName="RemoveVideoButton" Property="Opacity" Value="1" />
+                                        </Trigger>
+                                    </DataTemplate.Triggers>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+                </Grid>
+            </Border>
+
+            <GridSplitter Grid.Row="2"
+                          Height="8"
+                          HorizontalAlignment="Stretch"
+                          VerticalAlignment="Center"
+                          Background="#121214"
+                          ShowsPreview="True"
+                          ResizeDirection="Rows"
+                          ResizeBehavior="PreviousAndNext" />
+
+            <Border Grid.Row="3"
+                    CornerRadius="14"
+                    Background="{StaticResource PanelBrush}"
+                    BorderBrush="#27272A"
+                    BorderThickness="1"
+                    Padding="20">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="6*" />
+                        <ColumnDefinition Width="6*" />
+                    </Grid.ColumnDefinitions>
+
+                    <Grid Grid.Column="0" Margin="0,0,24,0">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <TextBlock Text="输出位置" FontSize="11" Foreground="{StaticResource DimTextBrush}" Margin="0,0,0,8" />
+                        <Grid Grid.Row="1">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBox x:Name="TxtOutputDir"
+                                     Grid.Column="0"
+                                     Text="默认同级目录..."
+                                     IsReadOnly="True"
+                                     Margin="0,0,10,0" />
+                            <Button Grid.Column="1"
+                                    Style="{StaticResource SecondaryButton}"
+                                    Content="浏览"
+                                    Click="BrowseOutput_Click" />
+                            <Button x:Name="BtnOpenDir"
+                                    Grid.Column="2"
+                                    Style="{StaticResource SecondaryButton}"
+                                    Content="打开"
+                                    Margin="8,0,0,0"
+                                    Visibility="Collapsed"
+                                    Click="OpenOutput_Click" />
+                        </Grid>
+                        <Grid Grid.Row="2" Margin="0,14,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="16" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Grid.Column="0">
+                                <TextBlock Text="输出规则" FontSize="11" Foreground="{StaticResource DimTextBrush}" Margin="0,0,0,7" />
+                                <Border Background="#18181B" BorderBrush="#2E2E33" BorderThickness="1" CornerRadius="8" Padding="12,9">
+                                    <TextBlock x:Name="PathHint" Text="自动创建: ...\[视频名]_Scenes\" FontSize="11" Foreground="{StaticResource MutedTextBrush}" TextWrapping="Wrap" />
+                                </Border>
+                            </StackPanel>
+                            <StackPanel Grid.Column="2">
+                                <TextBlock Text="音频" FontSize="11" Foreground="{StaticResource DimTextBrush}" Margin="0,0,0,7" />
+                                <Border Background="#18181B" BorderBrush="#2E2E33" BorderThickness="1" CornerRadius="8" Padding="12,9">
+                                    <CheckBox x:Name="ChkMute" Content="静音处理" />
+                                </Border>
+                            </StackPanel>
+                        </Grid>
+                    </Grid>
+
+                    <Grid Grid.Column="1">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="16" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+
+                        <StackPanel Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="3" Margin="0,0,0,14">
+                            <TextBlock Text="切片模式"
+                                       FontSize="11"
+                                       Foreground="{StaticResource DimTextBrush}"
+                                       Margin="0,0,0,7"
+                                       ToolTip="选择素材切分方式：智能场景适合自动找镜头边界，固定时长适合批量生成等长片段。" />
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="8" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <RadioButton x:Name="SmartModeRadio"
+                                             Grid.Column="0"
+                                             GroupName="SplitMode"
+                                             Content="智能场景"
+                                             IsChecked="True"
+                                             Style="{StaticResource ModeRadioButton}"
+                                             ToolTip="根据画面变化自动识别镜头切点，并结合相似度分析减少重复片段。适合从长视频中提炼可用素材。"
+                                             Checked="SplitMode_Checked" />
+                                <RadioButton x:Name="FixedModeRadio"
+                                             Grid.Column="2"
+                                             GroupName="SplitMode"
+                                             Content="固定时长"
+                                             Style="{StaticResource ModeRadioButton}"
+                                             ToolTip="按设定秒数均匀切片，不做场景识别和智能去重。适合需要固定长度素材的批量处理。"
+                                             Checked="SplitMode_Checked" />
+                            </Grid>
+                        </StackPanel>
+
+                        <StackPanel Grid.Row="1" Grid.Column="0">
+                            <TextBlock x:Name="SensitivityLabel"
+                                       Text="灵敏度"
+                                       FontSize="11"
+                                       Foreground="{StaticResource DimTextBrush}"
+                                       Margin="0,0,0,7"
+                                       ToolTip="控制智能场景对画面变化的敏感程度。数值越高越容易切出细小变化；切得太碎就调低，漏切就调高。" />
+                            <Slider x:Name="SensitivitySlider"
+                                    Minimum="0.01"
+                                    Maximum="1"
+                                    Value="0.75"
+                                    TickFrequency="0.01"
+                                    IsSnapToTickEnabled="True"
+                                    ToolTip="推荐 0.75。提高会检测更多镜头变化，降低会合并更多相近片段。"
+                                    ValueChanged="SensitivitySlider_ValueChanged" />
+                            <TextBlock x:Name="SensitivityValue" Text="0.75" FontSize="11" Foreground="{StaticResource MutedTextBrush}" />
+                        </StackPanel>
+
+                        <StackPanel Grid.Row="1" Grid.Column="2">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="12" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0">
+                                    <TextBlock x:Name="DurationLabel" Text="时长(秒)" FontSize="11" Foreground="{StaticResource DimTextBrush}" Margin="0,0,0,7" />
+                                    <TextBox x:Name="TxtDuration" Text="10" />
+                                </StackPanel>
+                                <StackPanel Grid.Column="2">
+                                    <TextBlock Text="并发数" FontSize="11" Foreground="{StaticResource DimTextBrush}" Margin="0,0,0,7" />
+                                    <TextBox x:Name="TxtThreads" Text="3" />
+                                </StackPanel>
+                            </Grid>
+                        </StackPanel>
+
+                        <StackPanel Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="3" Margin="0,14,0,0">
+                            <TextBlock Text="检测器" FontSize="11" Foreground="{StaticResource DimTextBrush}" Margin="0,0,0,7" />
+                            <ComboBox x:Name="DetectorCombo"
+                                      SelectedIndex="0"
+                                      Width="360"
+                                      HorizontalAlignment="Left">
+                                <ComboBoxItem Content="ContentDetector 内容变化" />
+                                <ComboBoxItem Content="AdaptiveDetector 自适应智能" />
+                            </ComboBox>
+                        </StackPanel>
+                    </Grid>
+                </Grid>
+            </Border>
+
+            <GridSplitter x:Name="LogSplitter"
+                          Grid.Row="4"
+                          Height="8"
+                          HorizontalAlignment="Stretch"
+                          VerticalAlignment="Center"
+                          Background="#121214"
+                          ShowsPreview="True"
+                          ResizeDirection="Rows"
+                          ResizeBehavior="PreviousAndNext" />
+
+            <Border x:Name="LogDrawer"
+                    Grid.Row="5"
+                    Background="#151518"
+                    BorderBrush="#27272A"
+                    BorderThickness="1"
+                    CornerRadius="12"
+                    Padding="18,12">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+                    <DockPanel Grid.Row="0" Margin="0,0,0,8">
+                        <TextBlock Text="运行日志" DockPanel.Dock="Left" Foreground="#A1A1AA" FontSize="11" FontWeight="SemiBold" />
+                        <ProgressBar x:Name="Progress"
+                                     DockPanel.Dock="Right"
+                                     Width="260"
+                                     Height="6"
+                                     Minimum="0"
+                                     Maximum="100"
+                                     Visibility="Collapsed"
+                                     Foreground="{StaticResource EmeraldBrush}"
+                                     Background="#27272A" />
+                    </DockPanel>
+                    <TextBox x:Name="TxtLog"
+                             Grid.Row="1"
+                             Background="#151518"
+                             BorderThickness="0"
+                             Foreground="#A1A1AA"
+                             FontFamily="Cascadia Mono, Consolas"
+                             FontSize="11"
+                             TextWrapping="NoWrap"
+                             VerticalScrollBarVisibility="Auto"
+                             HorizontalScrollBarVisibility="Auto"
+                             IsReadOnly="True"
+                             Padding="0" />
+                </Grid>
+            </Border>
+        </Grid>
+    </Grid>
+</Window>
+
