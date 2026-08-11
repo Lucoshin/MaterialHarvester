@@ -1,0 +1,55 @@
+<Window x:Class="VideoToMaterial.SubtitleRegionDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="{DynamicResource Ui.SubtitleRegionTitle}"
+        WindowStartupLocation="CenterOwner"
+        ResizeMode="NoResize"
+        SizeToContent="WidthAndHeight"
+        Background="#111214"
+        Foreground="#F4F4F5">
+    <Grid Margin="22">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <TextBlock Text="{DynamicResource Ui.SubtitleRegionHint}"
+                   MaxWidth="820"
+                   Foreground="#A1A1AA"
+                   TextWrapping="Wrap"
+                   Margin="0,0,0,14" />
+
+        <Border Grid.Row="1"
+                Background="#090A0C"
+                BorderBrush="#343A40"
+                BorderThickness="1"
+                CornerRadius="8">
+            <Canvas x:Name="SelectionSurface"
+                    Cursor="Cross"
+                    ClipToBounds="True"
+                    MouseLeftButtonDown="SelectionSurface_MouseLeftButtonDown"
+                    MouseMove="SelectionSurface_MouseMove"
+                    MouseLeftButtonUp="SelectionSurface_MouseLeftButtonUp">
+                <Image x:Name="PreviewImage" Stretch="Fill" />
+                <Rectangle x:Name="SelectionRectangle"
+                           Stroke="#34D399"
+                           StrokeThickness="2"
+                           Fill="#3310B981" />
+            </Canvas>
+        </Border>
+
+        <StackPanel Grid.Row="2"
+                    Orientation="Horizontal"
+                    HorizontalAlignment="Right"
+                    Margin="0,16,0,0">
+            <Button Style="{StaticResource SecondaryButton}"
+                    Content="{DynamicResource Ui.Cancel}"
+                    Click="Cancel_Click"
+                    Margin="0,0,10,0" />
+            <Button Style="{StaticResource PrimaryButton}"
+                    Content="{DynamicResource Ui.Confirm}"
+                    Click="Confirm_Click" />
+        </StackPanel>
+    </Grid>
+</Window>

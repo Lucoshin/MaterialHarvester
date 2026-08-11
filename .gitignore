@@ -34,6 +34,7 @@ yt-dlp.exe
 # Large or externally licensed model files
 models/*.onnx
 !models/README.md
+ai/
 
 # Generated packages
 *.zip

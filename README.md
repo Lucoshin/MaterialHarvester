@@ -18,6 +18,7 @@ Material Harvester 是一款面向视频创作者的 Windows 桌面工具，用�
 - **相似片段去重**：使用 pHash（感知哈希）和颜色直方图判断相邻或历史场景是否重复。
 - **批量处理队列**：支持多视频拖拽导入、缩略图预览、单个视频移除和并发导出。
 - **网络视频导入**：可选集成 `yt-dlp`，粘贴视频链接后下载并加入处理队列。
+- **AI 去字幕**：可选调用本地 Video Subtitle Remover，默认自动检测全画面文字，也可框选字幕区域降低误删风险；修复完整视频后再进入切片流程。
 - **硬件编码优先**：自动检测可用编码器，优先使用 NVIDIA NVENC 等硬件编码能力。
 - **现代 WPF 界面**：深色界面、拖拽上传区、折叠日志、参数说明 ToolTip。
 
@@ -40,6 +41,7 @@ Material Harvester 当前不是一个完全基于深度学习的视频检测器�
 - `ffmpeg.exe`（必需，运行时需要）
 - `ffprobe.exe`（可选，用于更稳定地读取视频时长）
 - `yt-dlp.exe`（可选，用于链接下载）
+- Video Subtitle Remover（可选，用于 AI 去除硬字幕，不随主程序分发）
 
 ### 快速开始
 
@@ -80,7 +82,19 @@ bin\Release\net8.0-windows\
    - `智能场景`：自动识别镜头变化并执行相似片段去重。
    - `固定时长`：按固定秒数切成等长片段。
 4. 调整灵敏度、最小时长、并发数和静音选项。
-5. 点击“开始批量处理”。
+5. 如需去除硬字幕，勾选“AI 去字幕”；默认自动检测，也可以选择“框选区域”，在首个视频预览上拖出绿色矩形后确认。
+6. 点击“开始批量处理”。
+
+AI 组件目录约定（完整绿色包已经包含，用户无需安装 Python、模型或运行库）：
+
+```text
+ai\video-subtitle-remover\
+  backend\main.py
+  python.exe
+  _internal\
+```
+
+发布时提供两种包：`MaterialHarvester-Green-Full` 包含离线 CPU AI 引擎，可直接使用 AI 去字幕；`MaterialHarvester-Green-Lite` 不包含 AI 引擎，其他切片、下载和队列功能不受影响。这里的 CPU 引擎是运行在用户现有 CPU 上的软件和模型，并不是附带或替代硬件。
 
 ### 项目结构
 
@@ -89,6 +103,8 @@ bin\Release\net8.0-windows\
 ├── App.xaml / App.xaml.cs
 ├── MainWindow.xaml / MainWindow.xaml.cs
 ├── VideoProcessorService.cs
+├── SubtitleRemovalService.cs
+├── SubtitleRegionDialog.xaml / SubtitleRegionDialog.xaml.cs
 ├── VideoAnalysisAlgorithms.cs
 ├── FFmpegHelper.cs
 ├── DownloadService.cs
@@ -127,7 +143,7 @@ dotnet publish VideoToMaterial.csproj `
   -o .\dist\MaterialHarvester-Green
 ```
 
-发布后将 `ffmpeg.exe`、`ffprobe.exe`、`yt-dlp.exe` 复制到 `dist\MaterialHarvester-Green`，再压缩该目录。
+发布后将 `ffmpeg.exe`、`ffprobe.exe`、`yt-dlp.exe` 复制到绿色目录。Lite 包可直接压缩；Full 包还需把经过命令行冒烟验证的 VSR 离线侧车放入 `ai\video-subtitle-remover` 后再压缩。
 
 ### 开源仓库边界
 
@@ -189,6 +205,7 @@ Material Harvester is a Windows desktop application for creators who need to tur
 - **Batch queue**: supports drag-and-drop import, thumbnail previews, per-item removal, and concurrent exports.
 - **URL import**: optionally integrates with `yt-dlp` to download videos and enqueue them for processing.
 - **Hardware encoding preference**: detects available encoders and prefers hardware acceleration such as NVIDIA NVENC when available.
+- **AI subtitle removal**: optionally invokes a local Video Subtitle Remover sidecar. It detects text across the frame by default, or can limit detection to a user-selected region before slicing the cleaned video.
 - **Modern WPF UI**: dark interface, drag-and-drop source area, collapsible logs, and parameter tooltips.
 
 ### Current Detection Pipeline
@@ -210,6 +227,7 @@ Material Harvester is not currently a fully deep-learning-based scene detector.
 - `ffmpeg.exe` required at runtime
 - `ffprobe.exe` optional for more reliable duration probing
 - `yt-dlp.exe` optional for URL downloads
+- Video Subtitle Remover optional for hard-subtitle removal and not bundled with the main application
 
 ### Quick Start
 
@@ -250,7 +268,16 @@ bin\Release\net8.0-windows\
    - `Smart Scene`: detects visual shot changes and removes similar clips.
    - `Fixed Duration`: slices videos into equal-length clips.
 4. Adjust sensitivity, minimum duration, concurrency, and mute options.
-5. Click "Start Batch Processing".
+5. To remove hard subtitles, enable "AI subtitle removal". Automatic detection is the default; optionally choose "Selected region", drag a green rectangle on the first video preview, and confirm.
+6. Click "Start Batch Processing".
+
+Expected AI sidecar layout:
+
+```text
+ai\video-subtitle-remover\
+  backend\main.py
+  videoEnv\Scripts\python.exe
+```
 
 ### Project Structure
 
@@ -259,6 +286,8 @@ bin\Release\net8.0-windows\
 ├── App.xaml / App.xaml.cs
 ├── MainWindow.xaml / MainWindow.xaml.cs
 ├── VideoProcessorService.cs
+├── SubtitleRemovalService.cs
+├── SubtitleRegionDialog.xaml / SubtitleRegionDialog.xaml.cs
 ├── VideoAnalysisAlgorithms.cs
 ├── FFmpegHelper.cs
 ├── DownloadService.cs

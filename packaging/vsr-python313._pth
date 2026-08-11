@@ -1,0 +1,8 @@
+python313.zip
+.
+_internal
+_internal/win32
+_internal/win32/lib
+_internal/Pythonwin
+
+import site

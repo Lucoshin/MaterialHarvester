@@ -64,6 +64,16 @@
                                VerticalAlignment="Center" />
                 </StackPanel>
                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Button x:Name="BtnAddLink"
+                            Style="{StaticResource SecondaryButton}"
+                            Content="{DynamicResource Ui.AddNetworkVideo}"
+                            MinWidth="150"
+                            Height="46"
+                            Margin="0,0,18,0"
+                            Background="#162A25"
+                            BorderBrush="#1F8065"
+                            Foreground="#A7F3D0"
+                            Click="AddLink_Click" />
                     <TextBlock Text="{DynamicResource Ui.Language}"
                                FontSize="11"
                                Foreground="{StaticResource DimTextBrush}"
@@ -137,12 +147,6 @@
                                    FontSize="13"
                                    HorizontalAlignment="Center"
                                    Margin="0,8,0,0" />
-                        <Button Style="{StaticResource LinkButton}"
-                                Margin="0,14,0,0"
-                                HorizontalAlignment="Center"
-                                Click="AddLink_Click">
-                            <TextBlock Text="{DynamicResource Ui.AddLink}" FontSize="13" TextDecorations="Underline" />
-                        </Button>
                     </StackPanel>
                     <ScrollViewer x:Name="QueueScroll"
                                   Visibility="Collapsed"
@@ -289,6 +293,7 @@
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
                         </Grid.RowDefinitions>
                         <TextBlock Text="{DynamicResource Ui.OutputLocation}" FontSize="11" Foreground="{StaticResource DimTextBrush}" Margin="0,0,0,8" />
                         <Grid Grid.Row="1">
@@ -327,9 +332,59 @@
                                 </Border>
                             </StackPanel>
                             <StackPanel Grid.Column="2">
-                                <TextBlock Text="{DynamicResource Ui.Audio}" FontSize="11" Foreground="{StaticResource DimTextBrush}" Margin="0,0,0,7" />
+                                <TextBlock Text="{DynamicResource Ui.MediaProcessing}" FontSize="11" Foreground="{StaticResource DimTextBrush}" Margin="0,0,0,7" />
                                 <Border Background="#18181B" BorderBrush="#2E2E33" BorderThickness="1" CornerRadius="8" Padding="12,9">
-                                    <CheckBox x:Name="ChkMute" Content="{DynamicResource Ui.Mute}" />
+                                    <StackPanel>
+                                        <StackPanel Orientation="Horizontal">
+                                            <CheckBox x:Name="ChkMute"
+                                                      Content="{DynamicResource Ui.Mute}"
+                                                      Margin="0,0,20,0" />
+                                            <CheckBox x:Name="ChkRemoveSubtitles"
+                                                      Content="{DynamicResource Ui.RemoveSubtitles}"
+                                                      Checked="RemoveSubtitles_Checked"
+                                                      Unchecked="RemoveSubtitles_Checked" />
+                                        </StackPanel>
+                                        <Grid Margin="0,10,0,0">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="8" />
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="8" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <RadioButton x:Name="AutomaticSubtitleScopeRadio"
+                                                         Grid.Column="0"
+                                                         GroupName="SubtitleScope"
+                                                         Content="{DynamicResource Ui.SubtitleScopeAuto}"
+                                                         IsChecked="True"
+                                                         IsEnabled="False"
+                                                         Height="30"
+                                                         Padding="8,3"
+                                                         FontSize="10"
+                                                         Style="{StaticResource ModeRadioButton}"
+                                                         ToolTip="{DynamicResource Ui.SubtitleScopeAutoTooltip}"
+                                                         Checked="SubtitleScope_Checked" />
+                                            <RadioButton x:Name="RegionSubtitleScopeRadio"
+                                                         Grid.Column="2"
+                                                         GroupName="SubtitleScope"
+                                                         Content="{DynamicResource Ui.SubtitleScopeRegion}"
+                                                         IsEnabled="False"
+                                                         Height="30"
+                                                         Padding="8,3"
+                                                         FontSize="10"
+                                                         Style="{StaticResource ModeRadioButton}"
+                                                         ToolTip="{DynamicResource Ui.SubtitleScopeRegionTooltip}"
+                                                         Checked="SubtitleScope_Checked" />
+                                            <Button x:Name="BtnSubtitleRegion"
+                                                    Grid.Column="4"
+                                                    Style="{StaticResource SecondaryButton}"
+                                                    Content="{DynamicResource Ui.StartSubtitleSelection}"
+                                                    Padding="9,4"
+                                                    FontSize="10"
+                                                    IsEnabled="False"
+                                                    Click="SelectSubtitleRegion_Click" />
+                                        </Grid>
+                                    </StackPanel>
                                 </Border>
                             </StackPanel>
                         </Grid>

@@ -34,6 +34,7 @@ namespace VideoToMaterial
         private EncoderProfile _currentProfile;
         private bool _isBusy;
         private bool _isApplyingLanguage;
+        private SubtitleRegion _subtitleRegion = SubtitleRegion.Default;
         private GridLength _lastLogRowHeight = new GridLength(1.35, GridUnitType.Star);
 
         public MainWindow()
@@ -360,8 +361,8 @@ namespace VideoToMaterial
                 ? Clipboard.GetText()
                 : "";
 
-            string urlText = PromptForUrls(initialUrl);
-            List<string> urls = ExtractUrls(urlText);
+            NetworkVideoImportRequest request = PromptForUrls(initialUrl);
+            List<string> urls = ExtractUrls(request?.UrlText);
             if (urls.Count == 0) return;
 
             SetBusy(true);
@@ -383,7 +384,15 @@ namespace VideoToMaterial
                     if (!string.IsNullOrEmpty(downloadedFile) && File.Exists(downloadedFile))
                     {
                         Log(LF("Log.DownloadSuccess", Path.GetFileName(downloadedFile)));
-                        AddFilesToQueue(new[] { downloadedFile });
+                        string[] queueFiles = request.FilesForQueue(new[] { downloadedFile }).ToArray();
+                        if (queueFiles.Length > 0)
+                        {
+                            AddFilesToQueue(queueFiles);
+                        }
+                        else
+                        {
+                            Log(L("Log.DownloadSavedOnly"));
+                        }
                     }
                     else
                     {
@@ -403,13 +412,13 @@ namespace VideoToMaterial
             }
         }
 
-        private string PromptForUrls(string initialUrl)
+        private NetworkVideoImportRequest PromptForUrls(string initialUrl)
         {
             Window prompt = new Window
             {
                 Owner = this,
                 Width = 660,
-                Height = 360,
+                Height = 410,
                 WindowStartupLocation = WindowStartupLocation.CenterOwner,
                 ResizeMode = ResizeMode.NoResize,
                 WindowStyle = WindowStyle.None,
@@ -431,6 +440,7 @@ namespace VideoToMaterial
             root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+            root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
             DockPanel header = new DockPanel { Margin = new Thickness(0, 0, 0, 16) };
@@ -469,21 +479,40 @@ namespace VideoToMaterial
                 AcceptsReturn = true,
                 TextWrapping = TextWrapping.Wrap,
                 VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-                Margin = new Thickness(0, 0, 0, 16),
+                Margin = new Thickness(0, 0, 0, 14),
                 MinHeight = 160
+            };
+            CheckBox autoQueue = new CheckBox
+            {
+                Content = L("Ui.AutoAddDownloadsToQueue"),
+                IsChecked = true,
+                Foreground = (System.Windows.Media.Brush)FindResource("TextBrush"),
+                Margin = new Thickness(0, 0, 0, 16)
             };
             StackPanel actions = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
             Button cancel = new Button { Content = L("Ui.Cancel"), Style = (Style)FindResource("SecondaryButton"), Margin = new Thickness(0, 0, 10, 0), MinWidth = 86 };
             Button ok = new Button { Content = L("Ui.AddAndParse"), Style = (Style)FindResource("PrimaryButton"), Padding = new Thickness(18, 8, 18, 8), MinWidth = 118 };
 
-            string result = null;
+            NetworkVideoImportRequest result = null;
             cancel.Click += (s, e) => prompt.Close();
-            ok.Click += (s, e) => { result = input.Text; prompt.Close(); };
+            ok.Click += (s, e) =>
+            {
+                result = new NetworkVideoImportRequest
+                {
+                    UrlText = input.Text,
+                    AddDownloadsToQueue = autoQueue.IsChecked == true
+                };
+                prompt.Close();
+            };
             input.KeyDown += (s, e) =>
             {
                 if (e.Key == Key.Enter && Keyboard.Modifiers == ModifierKeys.Control)
                 {
-                    result = input.Text;
+                    result = new NetworkVideoImportRequest
+                    {
+                        UrlText = input.Text,
+                        AddDownloadsToQueue = autoQueue.IsChecked == true
+                    };
                     prompt.Close();
                 }
             };
@@ -493,10 +522,12 @@ namespace VideoToMaterial
             Grid.SetRow(header, 0);
             Grid.SetRow(label, 1);
             Grid.SetRow(input, 2);
-            Grid.SetRow(actions, 3);
+            Grid.SetRow(autoQueue, 3);
+            Grid.SetRow(actions, 4);
             root.Children.Add(header);
             root.Children.Add(label);
             root.Children.Add(input);
+            root.Children.Add(autoQueue);
             root.Children.Add(actions);
             shell.Child = root;
             prompt.Content = shell;
@@ -588,6 +619,12 @@ namespace VideoToMaterial
             if (!TryReadInt(TxtThreads.Text, 1, 16, out int maxThreads, L("Param.Threads"))) return;
             if (!TryReadDouble(TxtDuration.Text, 1, 600, out double fixedDuration, L("Param.Duration"))) return;
 
+            if (ChkRemoveSubtitles.IsChecked == true && SubtitleRemovalService.FindInstallation(_appDir) == null)
+            {
+                MessageBox.Show(this, L("Log.SubtitleBackendMissing"), L("Ui.MissingComponent"), MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
             var options = new ProcessingOptions
             {
                 SplitMode = FixedModeRadio.IsChecked == true ? SplitMode.FixedDuration : SplitMode.SmartScene,
@@ -596,6 +633,13 @@ namespace VideoToMaterial
                 MinimumSceneDurationSeconds = fixedDuration,
                 Sensitivity = SensitivitySlider.Value,
                 Mute = ChkMute.IsChecked == true,
+                SubtitleRemoval = new SubtitleRemovalOptions
+                {
+                    Enabled = ChkRemoveSubtitles.IsChecked == true,
+                    UseAutomaticDetection = AutomaticSubtitleScopeRadio.IsChecked == true,
+                    Region = _subtitleRegion,
+                    InpaintMode = "sttn-auto"
+                },
                 MaxThreads = maxThreads,
                 Profile = _currentProfile
             };
@@ -668,6 +712,53 @@ namespace VideoToMaterial
 
         private void SplitMode_Checked(object sender, RoutedEventArgs e) => UpdateSplitModeControls();
 
+        private void RemoveSubtitles_Checked(object sender, RoutedEventArgs e)
+        {
+            UpdateSubtitleControls();
+        }
+
+        private void SubtitleScope_Checked(object sender, RoutedEventArgs e)
+        {
+            UpdateSubtitleControls();
+        }
+
+        private void UpdateSubtitleControls()
+        {
+            if (BtnSubtitleRegion == null || AutomaticSubtitleScopeRadio == null || RegionSubtitleScopeRadio == null) return;
+
+            bool enabled = !_isBusy && ChkRemoveSubtitles.IsChecked == true;
+            AutomaticSubtitleScopeRadio.IsEnabled = enabled;
+            RegionSubtitleScopeRadio.IsEnabled = enabled;
+            BtnSubtitleRegion.IsEnabled = enabled && RegionSubtitleScopeRadio.IsChecked == true && _taskQueue.Count > 0;
+        }
+
+        private async void SelectSubtitleRegion_Click(object sender, RoutedEventArgs e)
+        {
+            VideoQueueItem item = _queuePreviewItems.FirstOrDefault();
+            if (item == null)
+            {
+                MessageBox.Show(this, L("Log.SubtitleRegionNeedsVideo"), L("Ui.SubtitleRegionTitle"), MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            if (item.Thumbnail == null)
+            {
+                await LoadThumbnailAsync(item);
+            }
+
+            if (item.Thumbnail == null)
+            {
+                MessageBox.Show(this, LF("Log.ThumbnailFailed", item.Name), L("Ui.SubtitleRegionTitle"), MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            var dialog = new SubtitleRegionDialog(item.Thumbnail, _subtitleRegion) { Owner = this };
+            if (dialog.ShowDialog() == true)
+            {
+                _subtitleRegion = dialog.Region;
+            }
+        }
+
         private void UpdateSplitModeControls()
         {
             if (TxtDuration == null || SensitivitySlider == null || DetectorCombo == null) return;
@@ -739,6 +830,7 @@ namespace VideoToMaterial
         {
             _isBusy = busy;
             DropZone.IsEnabled = !busy;
+            BtnAddLink.IsEnabled = !busy;
             SmartModeRadio.IsEnabled = !busy;
             FixedModeRadio.IsEnabled = !busy;
             TxtDuration.IsEnabled = !busy;
@@ -746,6 +838,8 @@ namespace VideoToMaterial
             DetectorCombo.IsEnabled = !busy && SmartModeRadio.IsChecked == true;
             TxtThreads.IsEnabled = !busy;
             ChkMute.IsEnabled = !busy;
+            ChkRemoveSubtitles.IsEnabled = !busy;
+            UpdateSubtitleControls();
             BtnReset.IsEnabled = !busy;
             BtnStart.IsEnabled = !busy && _taskQueue.Count > 0 && File.Exists(_ffmpegPath);
         }
@@ -753,6 +847,7 @@ namespace VideoToMaterial
         private void UpdateQueueState()
         {
             BtnStart.IsEnabled = !_isBusy && _taskQueue.Count > 0 && File.Exists(_ffmpegPath);
+            UpdateSubtitleControls();
             QueueStatus.Text = _taskQueue.Count > 0
                 ? LF("Ui.AddedFilesStatus", _taskQueue.Count)
                 : (_currentProfile != null ? LF("Ui.EngineReady", _currentProfile.Name) : L("Ui.QueueEmpty"));

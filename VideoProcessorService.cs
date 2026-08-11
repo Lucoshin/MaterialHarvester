@@ -34,6 +34,7 @@ namespace VideoToMaterial
         public double MinimumSceneDurationSeconds { get; set; } = 10.0;
         public double Sensitivity { get; set; } = 0.75;
         public bool Mute { get; set; }
+        public SubtitleRemovalOptions SubtitleRemoval { get; set; } = new SubtitleRemovalOptions();
         public int MaxThreads { get; set; } = 1;
         public EncoderProfile Profile { get; set; }
     }
@@ -57,13 +58,92 @@ namespace VideoToMaterial
             if (options == null) throw new ArgumentNullException(nameof(options));
             if (options.Profile == null) throw new InvalidOperationException("编码器配置未初始化。");
 
-            if (options.SplitMode == SplitMode.FixedDuration)
+            string preparedInput = input;
+            string subtitleTempDirectory = null;
+            try
             {
-                await ProcessFixedDurationVideoAsync(input, outDir, options);
-                return;
+                if (options.SubtitleRemoval?.Enabled == true)
+                {
+                    SubtitleRemovalInstallation installation = options.SubtitleRemoval.Installation
+                        ?? SubtitleRemovalService.FindInstallation(AppContext.BaseDirectory);
+                    if (installation == null)
+                    {
+                        throw new InvalidOperationException(LocalizationManager.Text("Log.SubtitleBackendMissing"));
+                    }
+
+                    (int width, int height) = await GetVideoDimensionsAsync(input);
+                    subtitleTempDirectory = Path.Combine(
+                        Path.GetTempPath(),
+                        "MaterialHarvester",
+                        "SubtitleRemoval",
+                        Guid.NewGuid().ToString("N"));
+                    Directory.CreateDirectory(subtitleTempDirectory);
+                    preparedInput = Path.Combine(subtitleTempDirectory, "cleaned.mp4");
+
+                    Log(LocalizationManager.Format("Log.SubtitleRemovalStarted", options.SubtitleRemoval.InpaintMode));
+                    await SubtitleRemovalService.RemoveAsync(
+                        installation,
+                        input,
+                        preparedInput,
+                        options.SubtitleRemoval,
+                        width,
+                        height,
+                        Log);
+                    Log(LocalizationManager.Text("Log.SubtitleRemovalFinished"));
+                }
+
+                if (options.SplitMode == SplitMode.FixedDuration)
+                {
+                    await ProcessFixedDurationVideoAsync(preparedInput, outDir, options);
+                    return;
+                }
+
+                await ProcessSmartSceneVideoAsync(preparedInput, outDir, options);
+            }
+            finally
+            {
+                if (subtitleTempDirectory != null)
+                {
+                    try
+                    {
+                        if (File.Exists(preparedInput)) File.Delete(preparedInput);
+                        if (Directory.Exists(subtitleTempDirectory)) Directory.Delete(subtitleTempDirectory, false);
+                    }
+                    catch
+                    {
+                        // 临时文件清理失败不应覆盖实际处理结果。
+                    }
+                }
+            }
+        }
+
+        private async Task<(int width, int height)> GetVideoDimensionsAsync(string input)
+        {
+            if (File.Exists(_ffprobePath))
+            {
+                string output = RunProcessCapture(
+                    _ffprobePath,
+                    new[]
+                    {
+                        "-v", "error",
+                        "-select_streams", "v:0",
+                        "-show_entries", "stream=width,height",
+                        "-of", "csv=s=x:p=0",
+                        input
+                    },
+                    logOnError: false).Trim();
+                Match match = Regex.Match(output, @"^(\d+)x(\d+)$");
+                if (match.Success)
+                {
+                    return (
+                        int.Parse(match.Groups[1].Value, CultureInfo.InvariantCulture),
+                        int.Parse(match.Groups[2].Value, CultureInfo.InvariantCulture));
+                }
             }
 
-            await ProcessSmartSceneVideoAsync(input, outDir, options);
+            using Bitmap frame = await GetFrameAt(input, 0);
+            if (frame == null) throw new InvalidOperationException("无法读取视频尺寸，AI 去字幕不能开始。");
+            return (frame.Width, frame.Height);
         }
 
         private async Task ProcessFixedDurationVideoAsync(string input, string outDir, ProcessingOptions options)
