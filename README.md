@@ -145,7 +145,7 @@ dotnet publish VideoToMaterial.csproj `
 
 发布后将 `ffmpeg.exe`、`ffprobe.exe`、`yt-dlp.exe` 复制到绿色目录。Lite 包可直接压缩；Full 包还需把经过命令行冒烟验证的 VSR 离线侧车放入 `ai\video-subtitle-remover` 后再压缩。
 
-GitHub Release 中的 `MaterialHarvester-win-x64.exe` 是完整自解压版，不是仅包含 .NET 主程序的薄单文件。它内含绿色目录的全部文件，启动时解压到临时目录、运行 `MaterialHarvester.exe`，并在程序退出后清理临时文件。经常使用时建议下载 ZIP/7z 解压一次，启动更快；自解压 EXE 适合只保留一个下载文件的场景。
+GitHub Release 中的 `MaterialHarvester-win-x64.exe` 是完整自解压版，不是仅包含 .NET 主程序的薄单文件。它内含绿色目录的全部文件；打开后选择一个目录完成解压，再运行其中的 `MaterialHarvester.exe`。它不会请求管理员权限。经常使用时建议下载 ZIP/7z，体积更小；自解压 EXE 适合电脑上没有解压软件的场景。
 
 ### 开源仓库边界
 
@@ -328,7 +328,7 @@ dotnet publish VideoToMaterial.csproj `
   -o .\dist\MaterialHarvester-Green
 ```
 
-After publishing, copy `ffmpeg.exe`, `ffprobe.exe`, and `yt-dlp.exe` into `dist\MaterialHarvester-Green`, then compress the folder. The GitHub Release asset `MaterialHarvester-win-x64.exe` is a complete self-extracting package containing the same runtime tools and offline AI sidecar; it extracts to a temporary directory, launches `MaterialHarvester.exe`, and cleans up after the application exits.
+After publishing, copy `ffmpeg.exe`, `ffprobe.exe`, and `yt-dlp.exe` into `dist\MaterialHarvester-Green`, then compress the folder. The GitHub Release asset `MaterialHarvester-win-x64.exe` is a complete non-elevated self-extracting archive containing the same runtime tools and offline AI sidecar. Open it, choose a destination, then run the extracted `MaterialHarvester.exe`.
 
 ### Open-Source Repository Boundary
 
