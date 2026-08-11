@@ -1,0 +1,5 @@
+;!@Install@!UTF-8!
+Title="Material Harvester"
+Progress="yes"
+RunProgram="MaterialHarvester.exe"
+;!@InstallEnd@!
