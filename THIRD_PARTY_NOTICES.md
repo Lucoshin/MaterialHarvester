@@ -1,28 +1,26 @@
 # Third-Party Notices
 
-Material Harvester integrates with several third-party projects and tools. The source repository does not vendor large runtime binaries by default.
+Material Harvester 源码采用 MIT 许可证。第三方工具和库各自的许可证仍然适用，分发说明保留在 `packaging/licenses/` 中。
 
-## Runtime Tools
+## 当前发行包（NoAI）
 
-- **FFmpeg / ffprobe**: the public green packages redistribute the matching Gyan FFmpeg 9.0.1 Essentials static build under GPLv3. The package keeps `FFmpeg-GPL-3.0.txt`, the distributor README/build configuration, and an exact corresponding-source notice under `packaging/licenses/`.
-- **yt-dlp**: the public green packages redistribute yt-dlp 2026.07.04 for URL-based video import. Its Unlicense text and generated third-party license notice are kept under `packaging/licenses/`. Users remain responsible for the terms of service of the video platforms they access.
-- **Deno**: JavaScript/TypeScript runtime bundled so yt-dlp can execute its official EJS YouTube challenge solver without a separate user installation. Deno is distributed under the MIT License; its project notices and source are available at https://github.com/denoland/deno.
-- **7-Zip SFX module**: used only to wrap complete green directories as non-elevated self-extracting Release assets. 7-Zip is licensed under the GNU LGPL. The SFX binary's redistribution notice is kept as `packaging/licenses/7-Zip-LICENSE.txt`; source information is available at https://www.7-zip.org/.
-- **Video Subtitle Remover**: optional AI sidecar used for hard-subtitle detection and inpainting. The upstream project is Apache-2.0 and its license is kept alongside the sidecar. Material Harvester uses PaddleOCR mobile detection with dynamic masks, the LaMa engine for the CPU fallback, and STTN detection/inpainting for CUDA. Official ProPainter code and weights are restricted to non-commercial use and are deliberately removed from redistributable Material Harvester packages.
-- **Python Embedded Distribution**: the Full green package includes the official CPython 3.13 embedded runtime under the Python Software Foundation License; its `LICENSE.txt` is kept beside the runtime.
-- **PyTorch / torchvision, PaddlePaddle / PaddleOCR, OpenCV, NumPy, SciPy and supporting Python packages**: runtime dependencies redistributed in AI-enabled green packages. The CUDA package also redistributes the CUDA runtime libraries bundled by the official PyTorch wheel (including cuDNN and cuBLAS); their bundled licenses, notices, and package metadata remain applicable. End users do not need a separate CUDA Toolkit installation, but NVIDIA hardware acceleration requires a compatible driver.
+绿色包包含 .NET 运行时、FFmpeg、ffprobe、yt-dlp 和 Deno。`MaterialHarvester-win-x64.exe` 是 .NET 自包含单文件应用，不是自解压安装器；视频工具需要放在同目录。
 
-## NuGet Dependencies
+- **FFmpeg / ffprobe**：Gyan FFmpeg 9.0.1 Essentials 静态构建，采用 GPLv3。随包保留 `FFmpeg-GPL-3.0.txt`、构建说明及对应源码说明。
+- **yt-dlp**：随包版本为 2026.07.04。保留 `yt-dlp-UNLICENSE.txt` 和 `yt-dlp-THIRD_PARTY_LICENSES.txt`。
+- **Deno**：为 yt-dlp 提供 JavaScript 运行环境，采用 MIT 许可证；随包保留 `DENO-LICENSE.txt`。项目源码：https://github.com/denoland/deno。
+- **.NET**：包含 Windows 桌面运行时，用于无需预装 .NET 的自包含分发。运行时自带的许可证与第三方说明随包保留。
+- **7-Zip**：用于创建 ZIP / 7z 压缩包；当前单文件应用不嵌入 7-Zip 自解压模块。仓库保留其许可证及历史分发说明。
 
-- **OpenCvSharp4** and **OpenCvSharp4.runtime.win**: used for image analysis acceleration.
-- **Microsoft.ML.OnnxRuntime**: used by the reserved TransNetV2 detector implementation.
-- **System.Drawing.Common**: used for bitmap and icon processing in the Windows desktop application.
-- **Microsoft.Web.WebView2**: embeds isolated Microsoft Edge (Chromium) login surfaces for Douyin, Xiaohongshu, and Bilibili QR authentication. The application stores per-platform profiles separately from the user's Edge/Chrome profiles and exports only temporary platform cookies to yt-dlp.
+## 应用依赖
 
-## Model Files
+- **OpenCvSharp4 / OpenCvSharp4.runtime.win**：图像分析。
+- **Microsoft.ML.OnnxRuntime**：可选 ONNX 推理支持。
+- **System.Drawing.Common**：图像与图标处理。
+- **Microsoft.Web.WebView2**：内置平台登录界面，使用独立浏览器配置目录。随包保留 WebView2 许可证和第三方说明；WebView2 Runtime 由用户系统提供。
 
-`models/*.onnx` files are intentionally excluded from version control. If you use TransNetV2 or another ONNX model, verify that the model license allows your intended use and distribution.
+## 可选 AI 组件
 
-## Distribution Guidance
+源码保留对 Video Subtitle Remover 的可选支持。当前 NoAI 发行包不包含 VSR、Python、PyTorch、CUDA 运行库、去字幕包装器或模型权重。另行接入 AI 组件时，需保留相应项目、运行库与模型的许可说明；ProPainter 的非商用代码和权重不随公开发行包分发。
 
-Release archives may include FFmpeg, ffprobe, yt-dlp, Deno, AI runtime libraries, and a 7-Zip SFX stub for user convenience. Their exact license files and source/build references are bundled under `packaging/licenses/`; those notices must remain with redistributed packages.
+`models/*.onnx` 不纳入源码仓库或当前发行包。

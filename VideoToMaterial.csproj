@@ -9,13 +9,15 @@
     <AssemblyName>MaterialHarvester</AssemblyName>
     <ApplicationIcon>assets\material-harvester-logo-v2.ico</ApplicationIcon>
     <Platforms>AnyCPU</Platforms>
+    <IncludeAiSidecarSupport Condition="'$(IncludeAiSidecarSupport)' == ''">false</IncludeAiSidecarSupport>
   </PropertyGroup>
 
   <ItemGroup>
     <Content Include="assets\material-harvester-logo-v2.ico" />
     <Content Include="packaging\material_harvester_vsr.py">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      <CopyToPublishDirectory Condition="'$(IncludeAiSidecarSupport)' == 'true'">PreserveNewest</CopyToPublishDirectory>
+      <CopyToPublishDirectory Condition="'$(IncludeAiSidecarSupport)' != 'true'">Never</CopyToPublishDirectory>
     </Content>
     <Content Include="packaging\verify-green-package.ps1">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
@@ -23,7 +25,8 @@
     </Content>
     <Content Include="packaging\sanitize-ai-sidecar.ps1">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      <CopyToPublishDirectory Condition="'$(IncludeAiSidecarSupport)' == 'true'">PreserveNewest</CopyToPublishDirectory>
+      <CopyToPublishDirectory Condition="'$(IncludeAiSidecarSupport)' != 'true'">Never</CopyToPublishDirectory>
     </Content>
     <Content Include="packaging\licenses\*.txt">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>

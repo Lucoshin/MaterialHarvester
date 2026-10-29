@@ -2,10 +2,15 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$PackageDirectory,
 
+    [switch]$IncludeAi,
+
     [switch]$RequireCuda
 )
 
 $ErrorActionPreference = 'Stop'
+if ($RequireCuda -and -not $IncludeAi) {
+    throw 'RequireCuda requires IncludeAi.'
+}
 $packageRoot = (Resolve-Path -LiteralPath $PackageDirectory).Path
 $requiredFiles = @(
     'MaterialHarvester.exe',
@@ -13,8 +18,14 @@ $requiredFiles = @(
     'ffprobe.exe',
     'yt-dlp.exe',
     'deno.exe',
-    'packaging\material_harvester_vsr.py',
-    'packaging\sanitize-ai-sidecar.ps1',
+    'MaterialHarvester.dll',
+    'coreclr.dll',
+    'hostfxr.dll',
+    'hostpolicy.dll',
+    'Microsoft.Web.WebView2.Core.dll',
+    'Microsoft.Web.WebView2.Wpf.dll',
+    'LICENSE',
+    'THIRD_PARTY_NOTICES.md',
     'packaging\licenses\7-Zip-LICENSE.txt',
     'packaging\licenses\DENO-LICENSE.txt',
     'packaging\licenses\FFmpeg-GPL-3.0.txt',
@@ -22,9 +33,17 @@ $requiredFiles = @(
     'packaging\licenses\FFmpeg-Gyan-9.0.1-SOURCE.txt',
     'packaging\licenses\yt-dlp-UNLICENSE.txt',
     'packaging\licenses\yt-dlp-THIRD_PARTY_LICENSES.txt',
-    'ai\video-subtitle-remover\python.exe',
-    'ai\video-subtitle-remover\backend\main.py'
+    'packaging\licenses\WebView2-LICENSE.txt',
+    'packaging\licenses\WebView2-NOTICE.txt'
 )
+if ($IncludeAi) {
+    $requiredFiles += @(
+        'packaging\material_harvester_vsr.py',
+        'packaging\sanitize-ai-sidecar.ps1',
+        'ai\video-subtitle-remover\python.exe',
+        'ai\video-subtitle-remover\backend\main.py'
+    )
+}
 
 foreach ($relativePath in $requiredFiles) {
     $fullPath = Join-Path $packageRoot $relativePath
@@ -80,6 +99,26 @@ try {
     $denoVersion = [regex]::Match($denoVersionText, '\d+\.\d+\.\d+').Value
     if ($denoExitCode -ne 0 -or [Version]$denoVersion -lt [Version]'2.3.0') {
         throw "Packaged Deno is missing or stale: $denoVersionText"
+    }
+
+    if (-not $IncludeAi) {
+        foreach ($forbiddenPath in @('ai', 'packaging\material_harvester_vsr.py', 'packaging\sanitize-ai-sidecar.ps1')) {
+            if (Test-Path -LiteralPath (Join-Path $packageRoot $forbiddenPath)) {
+                throw "NoAI package contains an AI component: $forbiddenPath"
+            }
+        }
+        $models = @(Get-ChildItem -LiteralPath $packageRoot -Recurse -File |
+            Where-Object { $_.Extension -in '.onnx', '.pth', '.pt', '.safetensors' })
+        if ($models.Count -gt 0) { throw 'NoAI package contains model weights.' }
+        [PSCustomObject]@{
+            Package = $packageRoot
+            Edition = 'NoAI'
+            FFmpeg = $ffmpegVersion
+            FFprobe = $ffprobeVersion
+            YtDlp = $ytDlpVersion
+            Deno = $denoVersion
+        }
+        return
     }
 
     & $python $wrapper --help *> $null

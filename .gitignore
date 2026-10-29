@@ -25,11 +25,18 @@ Desktop.ini
 # Local notes / generated audit drafts
 adjust.md
 tts_audit.md
+AGENTS.md
+docs/plans/
+VideoToMaterial.Tests/
+MaterialHarvester.Cli.Tests/
+.formattercheck/
+.stylecheck/
 
 # Third-party runtime binaries
 ffmpeg.exe
 ffprobe.exe
 yt-dlp.exe
+deno.exe
 
 # Large or externally licensed model files
 models/*.onnx
