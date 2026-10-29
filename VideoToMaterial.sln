@@ -5,6 +5,10 @@ VisualStudioVersion = 17.14.36717.8
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "VideoToMaterial", "VideoToMaterial.csproj", "{2B9EBA8F-9FF5-4B4D-B37C-0FA9E5C9086E}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MaterialHarvester.Cli", "MaterialHarvester.Cli\MaterialHarvester.Cli.csproj", "{F4576C82-A32F-4F4D-B93E-2C61B6376AB4}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MaterialHarvester.Cli.Tests", "MaterialHarvester.Cli.Tests\MaterialHarvester.Cli.Tests.csproj", "{B1189532-59CB-4DF8-99F8-D9F88201C89B}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -15,6 +19,14 @@ Global
 		{2B9EBA8F-9FF5-4B4D-B37C-0FA9E5C9086E}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{2B9EBA8F-9FF5-4B4D-B37C-0FA9E5C9086E}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{2B9EBA8F-9FF5-4B4D-B37C-0FA9E5C9086E}.Release|Any CPU.Build.0 = Release|Any CPU
+		{F4576C82-A32F-4F4D-B93E-2C61B6376AB4}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F4576C82-A32F-4F4D-B93E-2C61B6376AB4}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F4576C82-A32F-4F4D-B93E-2C61B6376AB4}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{F4576C82-A32F-4F4D-B93E-2C61B6376AB4}.Release|Any CPU.Build.0 = Release|Any CPU
+		{B1189532-59CB-4DF8-99F8-D9F88201C89B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B1189532-59CB-4DF8-99F8-D9F88201C89B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B1189532-59CB-4DF8-99F8-D9F88201C89B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B1189532-59CB-4DF8-99F8-D9F88201C89B}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

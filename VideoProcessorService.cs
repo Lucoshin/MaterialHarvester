@@ -31,11 +31,13 @@ namespace VideoToMaterial
         public SceneDetectionEngine SceneDetectionEngine { get; set; } = SceneDetectionEngine.ContentDetector;
         public string HighPrecisionModelPath { get; set; }
         public double FixedDurationSeconds { get; set; } = 10.0;
+        public FixedClipSelectionMode FixedClipSelectionMode { get; set; } = FixedClipSelectionMode.Automatic;
         public double MinimumSceneDurationSeconds { get; set; } = 10.0;
         public double Sensitivity { get; set; } = 0.75;
         public bool Mute { get; set; }
         public SubtitleRemovalOptions SubtitleRemoval { get; set; } = new SubtitleRemovalOptions();
         public int MaxThreads { get; set; } = 1;
+        public string OutputFileNamePrefix { get; set; } = "";
         public EncoderProfile Profile { get; set; }
     }
 
@@ -53,25 +55,92 @@ namespace VideoToMaterial
             _ffprobePath = Path.Combine(Path.GetDirectoryName(ffmpegPath) ?? "", "ffprobe.exe");
         }
 
-        public async Task ProcessSingleVideoAsync(string input, string outDir, ProcessingOptions options)
+        public async Task ProcessSingleVideoAsync(
+            string input,
+            string outDir,
+            ProcessingOptions options,
+            CancellationToken cancellationToken = default)
         {
             if (options == null) throw new ArgumentNullException(nameof(options));
             if (options.Profile == null) throw new InvalidOperationException("编码器配置未初始化。");
+            cancellationToken.ThrowIfCancellationRequested();
 
+            string processingInput = input;
             string preparedInput = input;
+            string cfrTempDirectory = null;
             string subtitleTempDirectory = null;
+            bool useSinglePassSubtitleExport = false;
             try
             {
+                if (options.SubtitleRemoval?.Enabled == true
+                    && await IsVariableFrameRateAsync(input, cancellationToken))
+                {
+                    cfrTempDirectory = Path.Combine(
+                        Path.GetTempPath(),
+                        "MaterialHarvester",
+                        "ConstantFrameRate",
+                        Guid.NewGuid().ToString("N"));
+                    Directory.CreateDirectory(cfrTempDirectory);
+                    processingInput = Path.Combine(cfrTempDirectory, "source-cfr.mkv");
+                    EnsureTemporaryWorkspaceCapacity(input, cfrTempDirectory);
+                    string frameRate = await GetNormalizationFrameRateAsync(input, cancellationToken);
+                    Log($"> 检测到可变帧率视频，正在转换为 {frameRate} FPS 的无损恒定帧率工作源...");
+                    await CreateConstantFrameRateSourceAsync(
+                        input,
+                        processingInput,
+                        frameRate,
+                        cancellationToken);
+                    Log("> 恒定帧率工作源已就绪，后续场景规划、AI 去字幕和切片将使用同一时间基准。");
+                }
+
+                cancellationToken.ThrowIfCancellationRequested();
+                List<SceneTask> tasks = options.SplitMode == SplitMode.FixedDuration
+                    ? await PlanFixedDurationVideoAsync(processingInput, outDir, options, cancellationToken)
+                    : await PlanSmartSceneVideoAsync(processingInput, outDir, options, cancellationToken);
+                preparedInput = processingInput;
+
                 if (options.SubtitleRemoval?.Enabled == true)
                 {
                     SubtitleRemovalInstallation installation = options.SubtitleRemoval.Installation
-                        ?? SubtitleRemovalService.FindInstallation(AppContext.BaseDirectory);
+                        ?? await SubtitleRemovalService.FindBestInstallationAsync(AppContext.BaseDirectory);
                     if (installation == null)
                     {
                         throw new InvalidOperationException(LocalizationManager.Text("Log.SubtitleBackendMissing"));
                     }
+                    string aiAccelerator = await SubtitleRemovalService.ProbeAcceleratorAsync(installation);
+                    Log(LocalizationManager.Format("Log.SubtitleAccelerator", aiAccelerator));
+                    if (aiAccelerator == "CPU")
+                    {
+                        Log(LocalizationManager.Text("Log.SubtitleCpuWarning"));
+                    }
 
-                    (int width, int height) = await GetVideoDimensionsAsync(input);
+                    (int width, int height) = await GetVideoDimensionsAsync(processingInput, cancellationToken);
+                    double plannedDuration = await GetVideoDurationAsync(processingInput, cancellationToken);
+                    options.SubtitleRemoval.ProcessingRanges = SubtitleRemovalService.BuildProcessingRanges(
+                        tasks.Select(task => (task.Time, task.Duration)),
+                        contextSeconds: 0.5,
+                        totalDurationSeconds: plannedDuration);
+                    options.SubtitleRemoval.OutputSegments = tasks
+                        .Select(task => new SubtitleTimeRange(task.Time, task.Time + task.Duration))
+                        .ToArray();
+                    options.SubtitleRemoval.OutputVideoCodec = options.Profile.VideoCodec;
+                    options.SubtitleRemoval.OutputVideoArguments = (options.Profile.ExtraArgs ?? "")
+                        .Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                    useSinglePassSubtitleExport = installation.SupportsSinglePassExport
+                        && options.SubtitleRemoval.OutputSegments.Count > 0;
+                    if (useSinglePassSubtitleExport)
+                    {
+                        Log("> 性能优化：AI 清理阶段使用最终编码器并写入切点关键帧，后续切片不再重复编码视频。");
+                    }
+                    if (installation.SupportsProcessingRanges && options.SubtitleRemoval.ProcessingRanges.Count > 0)
+                    {
+                        double aiSeconds = options.SubtitleRemoval.ProcessingRanges.Sum(
+                            range => range.EndSeconds - range.StartSeconds);
+                        Log(LocalizationManager.Format(
+                            "Log.SubtitleRangeOptimization",
+                            options.SubtitleRemoval.ProcessingRanges.Count,
+                            aiSeconds));
+                    }
                     subtitleTempDirectory = Path.Combine(
                         Path.GetTempPath(),
                         "MaterialHarvester",
@@ -83,22 +152,24 @@ namespace VideoToMaterial
                     Log(LocalizationManager.Format("Log.SubtitleRemovalStarted", options.SubtitleRemoval.InpaintMode));
                     await SubtitleRemovalService.RemoveAsync(
                         installation,
-                        input,
+                        processingInput,
                         preparedInput,
                         options.SubtitleRemoval,
                         width,
                         height,
-                        Log);
+                        Log,
+                        (current, total) => OnProgress?.Invoke(current, total),
+                        cancellationToken);
                     Log(LocalizationManager.Text("Log.SubtitleRemovalFinished"));
                 }
 
-                if (options.SplitMode == SplitMode.FixedDuration)
-                {
-                    await ProcessFixedDurationVideoAsync(preparedInput, outDir, options);
-                    return;
-                }
-
-                await ProcessSmartSceneVideoAsync(preparedInput, outDir, options);
+                cancellationToken.ThrowIfCancellationRequested();
+                await ExportTasksAsync(
+                    preparedInput,
+                    tasks,
+                    options,
+                    useSinglePassSubtitleExport,
+                    cancellationToken);
             }
             finally
             {
@@ -114,14 +185,392 @@ namespace VideoToMaterial
                         // 临时文件清理失败不应覆盖实际处理结果。
                     }
                 }
+                if (cfrTempDirectory != null)
+                {
+                    try
+                    {
+                        if (Directory.Exists(cfrTempDirectory)) Directory.Delete(cfrTempDirectory, true);
+                    }
+                    catch
+                    {
+                        // 取消或失败后的临时工作源清理不能覆盖原始异常。
+                    }
+                }
             }
         }
 
-        private async Task<(int width, int height)> GetVideoDimensionsAsync(string input)
+        private async Task<bool> IsVariableFrameRateAsync(
+            string input,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!File.Exists(_ffprobePath)
+                || (OperatingSystem.IsWindows() && !HasPortableExecutableHeader(_ffprobePath)))
+            {
+                Log("[提示] 无法使用 ffprobe 检查帧时间戳，将先生成安全的恒定帧率工作源。");
+                return true;
+            }
+
+            try
+            {
+                (bool ratesSucceeded, string ratesOutput) = await TryRunProcessCaptureAsync(
+                    _ffprobePath,
+                    new[]
+                    {
+                        "-v", "error",
+                        "-select_streams", "v:0",
+                        "-show_entries", "stream=r_frame_rate,avg_frame_rate",
+                        "-of", "default=noprint_wrappers=1",
+                        input
+                    },
+                    TimeSpan.FromSeconds(15),
+                    cancellationToken);
+                if (!ratesSucceeded)
+                {
+                    Log("[提示] 无法可靠读取视频帧率，将先生成安全的恒定帧率工作源。");
+                    return true;
+                }
+
+                double nominalRate = ReadProbeRate(ratesOutput, "r_frame_rate");
+                double averageRate = ReadProbeRate(ratesOutput, "avg_frame_rate");
+                if (nominalRate <= 0 || averageRate <= 0)
+                {
+                    Log("[提示] 视频帧率元数据不完整，将先生成安全的恒定帧率工作源。");
+                    return true;
+                }
+
+                double rateTolerance = Math.Max(0.01, nominalRate * 0.005);
+                if (Math.Abs(nominalRate - averageRate) > rateTolerance)
+                {
+                    return true;
+                }
+
+                return await HasVariablePacketCadenceAsync(input, cancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"VFR detection failed: {ex.Message}");
+                Log("[提示] 视频时间戳检查失败，将先生成安全的恒定帧率工作源。");
+                return true;
+            }
+        }
+
+        private async Task<bool> HasVariablePacketCadenceAsync(
+            string input,
+            CancellationToken cancellationToken)
+        {
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = _ffprobePath,
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                CreateNoWindow = true,
+                StandardOutputEncoding = System.Text.Encoding.UTF8,
+                StandardErrorEncoding = System.Text.Encoding.UTF8
+            };
+            foreach (string argument in new[]
+            {
+                "-v", "error",
+                "-select_streams", "v:0",
+                "-show_packets",
+                "-show_entries", "packet=pts_time,duration_time",
+                "-of", "csv=p=0",
+                input
+            })
+            {
+                startInfo.ArgumentList.Add(argument);
+            }
+
+            using Process process = Process.Start(startInfo)
+                ?? throw new InvalidOperationException("ffprobe 帧时间戳检查进程启动失败。");
+            var presentationTimes = new List<double>();
+            var packetDurations = new List<double>();
+            Task<string> stderrTask = process.StandardError.ReadToEndAsync();
+            try
+            {
+                while (true)
+                {
+                    string line = await process.StandardOutput.ReadLineAsync(cancellationToken);
+                    if (line == null) break;
+                    string[] values = line.Split(',');
+                    if (values.Length > 0 && TryReadProbeNumber(values[0], out double pts))
+                    {
+                        presentationTimes.Add(pts);
+                    }
+                    if (values.Length > 1 && TryReadProbeNumber(values[1], out double duration)
+                        && duration > 0)
+                    {
+                        packetDurations.Add(duration);
+                    }
+                }
+                await process.WaitForExitAsync(cancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+                TryKillProcessTree(process);
+                await WaitForTerminatedProcessAsync(process);
+                try { await stderrTask; } catch { }
+                throw;
+            }
+
+            string stderr = await stderrTask;
+            if (process.ExitCode != 0)
+            {
+                Debug.WriteLine($"ffprobe packet cadence failed: {stderr}");
+                return true;
+            }
+
+            if (HasMeaningfulCadenceVariation(packetDurations)) return true;
+            if (presentationTimes.Count < 3) return false;
+
+            presentationTimes.Sort();
+            var intervals = new List<double>(presentationTimes.Count - 1);
+            for (int i = 1; i < presentationTimes.Count; i++)
+            {
+                double interval = presentationTimes[i] - presentationTimes[i - 1];
+                if (interval <= 0) return true;
+                intervals.Add(interval);
+            }
+            return HasMeaningfulCadenceVariation(intervals);
+        }
+
+        private async Task<string> GetNormalizationFrameRateAsync(
+            string input,
+            CancellationToken cancellationToken)
         {
             if (File.Exists(_ffprobePath))
             {
-                string output = RunProcessCapture(
+                (bool succeeded, string output) = await TryRunProcessCaptureAsync(
+                    _ffprobePath,
+                    new[]
+                    {
+                        "-v", "error",
+                        "-select_streams", "v:0",
+                        "-show_entries", "stream=avg_frame_rate,r_frame_rate",
+                        "-of", "default=noprint_wrappers=1",
+                        input
+                    },
+                    TimeSpan.FromSeconds(15),
+                    cancellationToken);
+                if (succeeded)
+                {
+                    double rate = ReadProbeRate(output, "avg_frame_rate");
+                    if (rate <= 0) rate = ReadProbeRate(output, "r_frame_rate");
+                    if (rate > 0)
+                    {
+                        return NormalizeFrameRate(rate);
+                    }
+                }
+            }
+
+            Log("[提示] 无法确定源帧率，恒定帧率工作源将使用兼容的 30 FPS。");
+            return "30";
+        }
+
+        private async Task CreateConstantFrameRateSourceAsync(
+            string input,
+            string output,
+            string frameRate,
+            CancellationToken cancellationToken)
+        {
+            var arguments = new[]
+            {
+                "-hide_banner",
+                "-loglevel", "error",
+                "-y",
+                "-i", input,
+                "-map", "0:v:0",
+                "-map", "0:a?",
+                "-c:v", "ffv1",
+                "-level", "3",
+                "-g", "1",
+                "-r", frameRate,
+                "-fps_mode", "cfr",
+                "-c:a", "copy",
+                "-map_metadata", "0",
+                output
+            };
+
+            try
+            {
+                await RunProcessCaptureAsync(
+                    _ffmpegPath,
+                    arguments,
+                    cancellationToken);
+                if (!File.Exists(output) || new FileInfo(output).Length == 0)
+                {
+                    throw new InvalidOperationException("FFmpeg 没有生成有效的恒定帧率工作源。");
+                }
+                bool canVerifyFrameCadence = File.Exists(_ffprobePath)
+                    && (!OperatingSystem.IsWindows() || HasPortableExecutableHeader(_ffprobePath));
+                if (canVerifyFrameCadence
+                    && await IsVariableFrameRateAsync(output, cancellationToken))
+                {
+                    throw new InvalidOperationException("恒定帧率工作源时间戳验证失败。");
+                }
+                if (!canVerifyFrameCadence)
+                {
+                    Log("[提示] ffprobe 不可用；已依据 FFmpeg 恒定帧率转换成功结果继续处理。");
+                }
+            }
+            catch
+            {
+                TryDeleteFile(output);
+                throw;
+            }
+        }
+
+        private static bool HasMeaningfulCadenceVariation(List<double> values)
+        {
+            if (values.Count < 2) return false;
+            double[] sorted = values.Where(value => value > 0).OrderBy(value => value).ToArray();
+            if (sorted.Length < 2) return false;
+            double median = sorted[sorted.Length / 2];
+            // Matroska commonly stores timestamps at 1 ms resolution, so a true
+            // 30/60/120 FPS stream naturally alternates by about 1 ms. Treat that
+            // container quantization as CFR while still detecting dropped/duplicated frames.
+            double tolerance = Math.Max(0.0015, median * 0.08);
+            return sorted.Any(value => Math.Abs(value - median) > tolerance);
+        }
+
+        private static double ReadProbeRate(string output, string name)
+        {
+            Match match = Regex.Match(
+                output ?? "",
+                $@"(?m)^{Regex.Escape(name)}=(?<rate>[^\r\n]+)\r?$");
+            return match.Success && TryReadRate(match.Groups["rate"].Value, out double rate)
+                ? rate
+                : 0;
+        }
+
+        private static bool TryReadRate(string value, out double rate)
+        {
+            rate = 0;
+            if (string.IsNullOrWhiteSpace(value)) return false;
+            string[] parts = value.Trim().Split('/');
+            if (parts.Length == 2
+                && TryReadProbeNumber(parts[0], out double numerator)
+                && TryReadProbeNumber(parts[1], out double denominator)
+                && denominator != 0)
+            {
+                rate = numerator / denominator;
+                return double.IsFinite(rate) && rate > 0;
+            }
+            return TryReadProbeNumber(value, out rate) && rate > 0;
+        }
+
+        private static bool TryReadProbeNumber(string value, out double number)
+        {
+            return double.TryParse(
+                value?.Trim(),
+                NumberStyles.Float,
+                CultureInfo.InvariantCulture,
+                out number)
+                && double.IsFinite(number);
+        }
+
+        private static string NormalizeFrameRate(double sourceRate)
+        {
+            var commonRates = new (double Value, string Text)[]
+            {
+                (24000d / 1001d, "24000/1001"),
+                (24, "24"),
+                (25, "25"),
+                (30000d / 1001d, "30000/1001"),
+                (30, "30"),
+                (50, "50"),
+                (60000d / 1001d, "60000/1001"),
+                (60, "60"),
+                (120, "120")
+            };
+            (double Value, string Text) nearest = commonRates
+                .OrderBy(candidate => Math.Abs(candidate.Value - sourceRate))
+                .First();
+            if (Math.Abs(nearest.Value - sourceRate) / sourceRate <= 0.02)
+            {
+                return nearest.Text;
+            }
+            return Math.Clamp(sourceRate, 1, 240)
+                .ToString("0.######", CultureInfo.InvariantCulture);
+        }
+
+        private static void TryKillProcessTree(Process process)
+        {
+            try
+            {
+                if (!process.HasExited) process.Kill(entireProcessTree: true);
+            }
+            catch
+            {
+                // 进程可能已经自行结束。
+            }
+        }
+
+        private static async Task WaitForTerminatedProcessAsync(Process process)
+        {
+            try { await process.WaitForExitAsync(); } catch { }
+        }
+
+        private static void TryDeleteFile(string path)
+        {
+            try
+            {
+                if (!string.IsNullOrWhiteSpace(path) && File.Exists(path)) File.Delete(path);
+            }
+            catch
+            {
+                // 取消清理采用尽力而为，不能覆盖原始异常。
+            }
+        }
+
+        private static void EnsureTemporaryWorkspaceCapacity(string input, string temporaryDirectory)
+        {
+            long inputBytes = new FileInfo(input).Length;
+            string root = Path.GetPathRoot(Path.GetFullPath(temporaryDirectory));
+            if (string.IsNullOrWhiteSpace(root)) return;
+
+            long requiredBytes;
+            try
+            {
+                checked
+                {
+                    requiredBytes = inputBytes * 8L + 2L * 1024 * 1024 * 1024;
+                }
+            }
+            catch (OverflowException)
+            {
+                requiredBytes = long.MaxValue;
+            }
+
+            long availableBytes = new DriveInfo(root).AvailableFreeSpace;
+            if (availableBytes < requiredBytes)
+            {
+                throw new IOException(
+                    $"临时磁盘空间不足，VFR 安全处理至少需要约 {FormatByteSize(requiredBytes)}，" +
+                    $"当前仅剩 {FormatByteSize(availableBytes)}。请释放 {root} 空间后重试。");
+            }
+        }
+
+        private static string FormatByteSize(long bytes)
+        {
+            const double gib = 1024d * 1024d * 1024d;
+            return bytes == long.MaxValue
+                ? "超大容量"
+                : $"{bytes / gib:F1} GB";
+        }
+
+        private async Task<(int width, int height)> GetVideoDimensionsAsync(
+            string input,
+            CancellationToken cancellationToken = default)
+        {
+            if (File.Exists(_ffprobePath))
+            {
+                (bool succeeded, string output) = await TryRunProcessCaptureAsync(
                     _ffprobePath,
                     new[]
                     {
@@ -131,41 +580,65 @@ namespace VideoToMaterial
                         "-of", "csv=s=x:p=0",
                         input
                     },
-                    logOnError: false).Trim();
-                Match match = Regex.Match(output, @"^(\d+)x(\d+)$");
-                if (match.Success)
+                    TimeSpan.FromSeconds(8),
+                    cancellationToken);
+                if (succeeded)
                 {
-                    return (
-                        int.Parse(match.Groups[1].Value, CultureInfo.InvariantCulture),
-                        int.Parse(match.Groups[2].Value, CultureInfo.InvariantCulture));
+                    Match match = Regex.Match(output.Trim(), @"^(\d+)x(\d+)$");
+                    if (match.Success)
+                    {
+                        return (
+                            int.Parse(match.Groups[1].Value, CultureInfo.InvariantCulture),
+                            int.Parse(match.Groups[2].Value, CultureInfo.InvariantCulture));
+                    }
                 }
+                Log("[提示] ffprobe 尺寸探测失败，改用 FFmpeg 抽帧读取尺寸。");
             }
 
-            using Bitmap frame = await GetFrameAt(input, 0);
+            using Bitmap frame = await GetFrameAt(input, 0, cancellationToken);
             if (frame == null) throw new InvalidOperationException("无法读取视频尺寸，AI 去字幕不能开始。");
             return (frame.Width, frame.Height);
         }
 
-        private async Task ProcessFixedDurationVideoAsync(string input, string outDir, ProcessingOptions options)
+        private async Task<List<SceneTask>> PlanFixedDurationVideoAsync(
+            string input,
+            string outDir,
+            ProcessingOptions options,
+            CancellationToken cancellationToken)
         {
             double fixedDuration = Math.Max(1.0, Math.Min(600.0, options.FixedDurationSeconds));
             Log($"> 固定时长切片模式：每段 {fixedDuration:F1}s");
 
-            double videoDuration = await GetVideoDurationAsync(input);
-            List<SceneTask> tasks = BuildFixedDurationTasks(videoDuration, fixedDuration, outDir);
+            double videoDuration = await GetVideoDurationAsync(input, cancellationToken);
+            List<SceneTask> tasks = BuildFixedDurationTasks(
+                videoDuration,
+                fixedDuration,
+                options.FixedClipSelectionMode,
+                outDir,
+                options.OutputFileNamePrefix);
 
             Log($"> 时长分析完成：视频 {videoDuration:F2}s → {tasks.Count} 个片段");
-            await ExportTasksAsync(input, tasks, options);
+            return tasks;
         }
 
-        private async Task ProcessSmartSceneVideoAsync(string input, string outDir, ProcessingOptions options)
+        private async Task<List<SceneTask>> PlanSmartSceneVideoAsync(
+            string input,
+            string outDir,
+            ProcessingOptions options,
+            CancellationToken cancellationToken)
         {
             double sens = options.Sensitivity;
             double minSceneDuration = Math.Max(1.0, Math.Min(600.0, options.MinimumSceneDurationSeconds));
             Log("> 正在智能分析场景...");
             Log($"  [切片约束] 最小场景时长：{minSceneDuration:F1}s");
             Log($"  [检测引擎] {GetSceneDetectionEngineName(options.SceneDetectionEngine)}");
-            List<double> stamps = await DetectScenes(input, sens, minSceneDuration, options.SceneDetectionEngine, options.HighPrecisionModelPath);
+            List<double> stamps = await DetectScenes(
+                input,
+                sens,
+                minSceneDuration,
+                options.SceneDetectionEngine,
+                options.HighPrecisionModelPath,
+                cancellationToken: cancellationToken);
             
             // 确保总是包含0.0起点
             if (stamps.Count == 0 || stamps[0] > 0.1) stamps.Insert(0, 0.0);
@@ -177,7 +650,15 @@ namespace VideoToMaterial
             double scanDuration = 20.0;
             Log($"  [智能优化]正在执行前 {scanDuration}s 高灵敏度精细扫描...");
 
-            var extraStamps = await DetectScenes(input, 0.95, Math.Min(minSceneDuration, scanDuration), SceneDetectionEngine.ContentDetector, null, 0, scanDuration);
+            var extraStamps = await DetectScenes(
+                input,
+                0.95,
+                Math.Min(minSceneDuration, scanDuration),
+                SceneDetectionEngine.ContentDetector,
+                null,
+                0,
+                scanDuration,
+                cancellationToken);
 
             int added = 0;
             foreach (var t in extraStamps)
@@ -197,7 +678,7 @@ namespace VideoToMaterial
                 Log($"  [智能优化] 在片头补充了 {added} 个细微场景切点");
             }
 
-            double videoDuration = await GetVideoDurationAsync(input);
+            double videoDuration = await GetVideoDurationAsync(input, cancellationToken);
             
             // 最终导出任务列表
             List<SceneTask> tasks = new List<SceneTask>();
@@ -224,11 +705,15 @@ namespace VideoToMaterial
             }
 
             Log($"  [性能] 批量抽取 {candidates.Count} 个切点帧用于去重分析...");
-            Dictionary<int, Bitmap> frameCache = await GetFramesAtAsync(input, candidates.Select(c => c.Time).ToList());
+            Dictionary<int, Bitmap> frameCache = await GetFramesAtAsync(
+                input,
+                candidates.Select(c => c.Time).ToList(),
+                cancellationToken);
             int totalStamps = Math.Max(1, candidates.Count);
             
             for (int i = 0; i < candidates.Count; i++)
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 SceneCandidate candidate = candidates[i];
                 double tStart = candidate.Time;
                 double duration = candidate.Duration;
@@ -238,7 +723,7 @@ namespace VideoToMaterial
                 {
                     if (!frameCache.TryGetValue(i, out frame) || frame == null)
                     {
-                        frame = await GetFrameAt(input, tStart);
+                        frame = await GetFrameAt(input, tStart, cancellationToken);
                     }
 
                     using (Bitmap bmp = frame)
@@ -317,7 +802,7 @@ namespace VideoToMaterial
                     else
                     {
                         // 【新增】：截断上一段（如果存在），开始新场景
-                        string name = Path.Combine(outDir, $"Scene_{tasks.Count:D3}_{tStart:F2}s.mp4");
+                        string name = Path.Combine(outDir, $"{options.OutputFileNamePrefix}Scene_{tasks.Count:D3}_{tStart:F2}s.mp4");
                         currentTask = new SceneTask { Time = tStart, Duration = duration, OutputName = name };
                         tasks.Add(currentTask);
                         
@@ -342,7 +827,7 @@ namespace VideoToMaterial
             
             Log($"> 智能去重完成：{stamps.Count} 个场景 → {tasks.Count} 个精选片段 (去重率:{(1 - tasks.Count / (float)Math.Max(1, stamps.Count)) * 100:F1}%)");
 
-            await ExportTasksAsync(input, tasks, options);
+            return tasks;
         }
 
         private List<double> EnforceMinimumSceneGap(List<double> stamps, double minSceneDuration)
@@ -364,163 +849,296 @@ namespace VideoToMaterial
             return normalized;
         }
 
-        private List<SceneTask> BuildFixedDurationTasks(double videoDuration, double fixedDuration, string outDir)
+        private List<SceneTask> BuildFixedDurationTasks(
+            double videoDuration,
+            double fixedDuration,
+            FixedClipSelectionMode selectionMode,
+            string outDir,
+            string outputFileNamePrefix)
         {
             if (videoDuration <= 0) throw new InvalidOperationException("无法获取有效的视频时长。");
             if (fixedDuration <= 0) throw new ArgumentOutOfRangeException(nameof(fixedDuration));
 
-            List<SceneTask> tasks = new List<SceneTask>();
-            int index = 0;
+            List<FixedClipRange> ranges = FixedDurationSelectionPlanner
+                .Create(videoDuration, fixedDuration, selectionMode)
+                .ToList();
+            List<SceneTask> tasks = new List<SceneTask>(ranges.Count);
 
-            for (double start = 0; start < videoDuration; start += fixedDuration)
+            for (int index = 0; index < ranges.Count; index++)
             {
-                double duration = Math.Min(fixedDuration, videoDuration - start);
-                if (duration < 0.5) break;
-
-                string name = Path.Combine(outDir, $"Scene_{index:D3}_{start:F2}s.mp4");
-                tasks.Add(new SceneTask { Time = start, Duration = duration, OutputName = name });
-                index++;
+                FixedClipRange range = ranges[index];
+                string name = Path.Combine(
+                    outDir,
+                    $"{outputFileNamePrefix}Scene_{index:D3}_{range.StartSeconds:F2}s.mp4");
+                tasks.Add(new SceneTask
+                {
+                    Time = range.StartSeconds,
+                    Duration = range.DurationSeconds,
+                    OutputName = name
+                });
             }
 
             return tasks;
         }
 
-        private async Task ExportTasksAsync(string input, List<SceneTask> tasks, ProcessingOptions options)
+        private async Task ExportTasksAsync(
+            string input,
+            List<SceneTask> tasks,
+            ProcessingOptions options,
+            bool copyPreparedVideo = false,
+            CancellationToken cancellationToken = default)
         {
             OnProgress?.Invoke(0, tasks.Count);
 
             using (SemaphoreSlim sem = new SemaphoreSlim(Math.Max(1, options.MaxThreads)))
             {
                 List<Task> running = new List<Task>();
+                List<(SceneTask Task, Exception Error)> failedTasks = new List<(SceneTask, Exception)>();
+                object failedTasksLock = new object();
                 int done = 0;
-                
-                foreach (var t in tasks)
+                try
                 {
-                    await sem.WaitAsync();
-                    running.Add(Task.Run(async () =>
+                    foreach (var t in tasks)
                     {
-                        try
+                        await sem.WaitAsync(cancellationToken);
+                        running.Add(Task.Run(async () =>
                         {
-                            await CutVideo(input, t.OutputName, t.Time, t.Duration, options.Mute, options.Profile);
-                            Log($"  [OK] {Path.GetFileName(t.OutputName)} ({t.Duration:F1}s)");
-                        }
-                        finally
+                            try
+                            {
+                                await CutVideo(
+                                    input,
+                                    t.OutputName,
+                                    t.Time,
+                                    t.Duration,
+                                    options.Mute,
+                                    options.Profile,
+                                    copyPreparedVideo,
+                                    cancellationToken);
+                                Log($"  [OK] {Path.GetFileName(t.OutputName)} ({t.Duration:F1}s)");
+                            }
+                            catch (OperationCanceledException)
+                            {
+                                throw;
+                            }
+                            catch (Exception ex)
+                            {
+                                lock (failedTasksLock)
+                                {
+                                    failedTasks.Add((t, ex));
+                                }
+                            }
+                            finally
+                            {
+                                sem.Release();
+                                int d = Interlocked.Increment(ref done);
+                                OnProgress?.Invoke(d, tasks.Count);
+                            }
+                        }));
+                    }
+                    await Task.WhenAll(running);
+
+                    if (failedTasks.Count > 0)
+                    {
+                        Log($"> 检测到 {failedTasks.Count} 个切片发生瞬时失败，正在降低负载并逐个串行重试...");
+                        foreach ((SceneTask failedTask, Exception _) in failedTasks)
                         {
-                            sem.Release();
-                            int d = Interlocked.Increment(ref done);
-                            OnProgress?.Invoke(d, tasks.Count);
+                            cancellationToken.ThrowIfCancellationRequested();
+                            await CutVideo(
+                                input,
+                                failedTask.OutputName,
+                                failedTask.Time,
+                                failedTask.Duration,
+                                options.Mute,
+                                options.Profile,
+                                copyPreparedVideo,
+                                cancellationToken);
+                            Log($"  [OK-串行重试] {Path.GetFileName(failedTask.OutputName)} ({failedTask.Duration:F1}s)");
                         }
-                    }));
+                    }
                 }
-                await Task.WhenAll(running);
+                catch
+                {
+                    try { await Task.WhenAll(running); } catch { }
+                    throw;
+                }
             }
         }
 
-        private Task<double> GetVideoDurationAsync(string input)
+        private async Task<double> GetVideoDurationAsync(
+            string input,
+            CancellationToken cancellationToken = default)
         {
-            return Task.Run(() =>
+            if (File.Exists(_ffprobePath))
             {
-                if (File.Exists(_ffprobePath))
+                (bool streamSucceeded, string streamOutput) = await TryRunProcessCaptureAsync(
+                    _ffprobePath,
+                    new[]
+                    {
+                        "-v", "error",
+                        "-select_streams", "v:0",
+                        "-show_entries", "stream=duration",
+                        "-of", "default=noprint_wrappers=1:nokey=1",
+                        input
+                    },
+                    TimeSpan.FromSeconds(8),
+                    cancellationToken);
+                if (streamSucceeded && double.TryParse(
+                    streamOutput.Trim(),
+                    NumberStyles.Float,
+                    CultureInfo.InvariantCulture,
+                    out double duration) && duration > 0)
                 {
-                    try
-                    {
-                        string output = RunProcessCapture(_ffprobePath, $"-v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 \"{input}\"", logOnError: false);
-                        if (double.TryParse(output.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out double duration) && duration > 0)
-                        {
-                            return duration;
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        Log($"[提示] ffprobe 读取时长失败，改用 ffmpeg 回退解析：{ex.Message}");
-                    }
+                    return duration;
                 }
 
-                Log("[提示] ffprobe 不可用或解析失败，尝试使用 ffmpeg 读取视频时长。");
-                string ffmpegOutput = RunProcessCapture(_ffmpegPath, $"-i \"{input}\"", allowNonZeroExit: true);
-                Match match = Regex.Match(ffmpegOutput, @"Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)");
-                if (match.Success)
+                (bool formatSucceeded, string formatOutput) = await TryRunProcessCaptureAsync(
+                    _ffprobePath,
+                    new[]
+                    {
+                        "-v", "error",
+                        "-show_entries", "format=duration",
+                        "-of", "default=noprint_wrappers=1:nokey=1",
+                        input
+                    },
+                    TimeSpan.FromSeconds(8),
+                    cancellationToken);
+                if (formatSucceeded && double.TryParse(
+                    formatOutput.Trim(),
+                    NumberStyles.Float,
+                    CultureInfo.InvariantCulture,
+                    out duration) && duration > 0)
                 {
-                    double hours = double.Parse(match.Groups[1].Value, CultureInfo.InvariantCulture);
-                    double minutes = double.Parse(match.Groups[2].Value, CultureInfo.InvariantCulture);
-                    double seconds = double.Parse(match.Groups[3].Value, CultureInfo.InvariantCulture);
-                    return hours * 3600 + minutes * 60 + seconds;
+                    return duration;
                 }
+                Log("[提示] ffprobe 读取时长失败，改用 FFmpeg 回退解析。");
+            }
 
-                throw new InvalidOperationException("无法获取视频总时长，请确认 ffprobe.exe 与 ffmpeg.exe 可用。");
-            });
+            Log("[提示] ffprobe 不可用或解析失败，尝试使用 ffmpeg 读取视频时长。");
+            (bool _, string ffmpegOutput) = await TryRunProcessCaptureAsync(
+                _ffmpegPath,
+                new[] { "-hide_banner", "-i", input },
+                TimeSpan.FromSeconds(15),
+                cancellationToken);
+            Match match = Regex.Match(ffmpegOutput, @"Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)");
+            if (match.Success)
+            {
+                double hours = double.Parse(match.Groups[1].Value, CultureInfo.InvariantCulture);
+                double minutes = double.Parse(match.Groups[2].Value, CultureInfo.InvariantCulture);
+                double seconds = double.Parse(match.Groups[3].Value, CultureInfo.InvariantCulture);
+                return hours * 3600 + minutes * 60 + seconds;
+            }
+
+            throw new InvalidOperationException("无法获取视频总时长，请确认 ffprobe.exe 与 ffmpeg.exe 可用。");
         }
 
-        private Task<List<double>> DetectScenes(string path, double sensitivity, double minDuration, SceneDetectionEngine engine = SceneDetectionEngine.ContentDetector, string highPrecisionModelPath = null, double startOffset = 0, double? maxDuration = null)
+        private async Task<List<double>> DetectScenes(
+            string path,
+            double sensitivity,
+            double minDuration,
+            SceneDetectionEngine engine = SceneDetectionEngine.ContentDetector,
+            string highPrecisionModelPath = null,
+            double startOffset = 0,
+            double? maxDuration = null,
+            CancellationToken cancellationToken = default)
         {
-            return Task.Run(() =>
+            cancellationToken.ThrowIfCancellationRequested();
+            if (engine == SceneDetectionEngine.HighPrecision)
             {
-                if (engine == SceneDetectionEngine.HighPrecision)
-                {
-                    throw new NotSupportedException("高精度检测引擎尚未配置模型。请接入 TransNetV2/AutoShot ONNX 模型后再启用。");
-                }
+                throw new NotSupportedException("高精度检测引擎尚未配置模型。请接入 TransNetV2/AutoShot ONNX 模型后再启用。");
+            }
 
-                // 🔧 修复：用户理解的"灵敏度"与FFmpeg的"阈值"是反向关系
-                // 灵敏度 0.1 (低) -> 阈值 0.9 (只检测大变化)
-                // 灵敏度 0.9 (高) -> 阈值 0.1 (检测微小变化)
-                double threshold = Math.Max(0, Math.Min(1, 1.0 - sensitivity));
-                
-                // 仅在主扫描时打印日志
+            double threshold = Math.Max(0, Math.Min(1, 1.0 - sensitivity));
+            if (startOffset == 0 && maxDuration == null)
+                Log($"> 场景检测配置：灵敏度={sensitivity:F2} -> FFmpeg阈值={threshold:F2}");
+
+            List<double> stamps = await DetectScenesWithThresholdAsync(
+                path,
+                threshold,
+                minDuration,
+                startOffset,
+                maxDuration,
+                cancellationToken);
+
+            if (engine == SceneDetectionEngine.AdaptiveDetector)
+            {
+                double adaptiveThreshold = Math.Max(0.02, threshold * 0.65);
+                List<double> sensitive = await DetectScenesWithThresholdAsync(
+                    path,
+                    adaptiveThreshold,
+                    Math.Max(0.5, minDuration * 0.5),
+                    startOffset,
+                    maxDuration,
+                    cancellationToken);
+                int before = stamps.Count;
+                stamps = MergeAdaptiveSceneCandidates(stamps, sensitive, minDuration);
                 if (startOffset == 0 && maxDuration == null)
-                    Log($"> 场景检测配置：灵敏度={sensitivity:F2} -> FFmpeg阈值={threshold:F2}");
-
-                List<double> stamps = DetectScenesWithThreshold(path, threshold, minDuration, startOffset, maxDuration);
-
-                if (engine == SceneDetectionEngine.AdaptiveDetector)
                 {
-                    double adaptiveThreshold = Math.Max(0.02, threshold * 0.65);
-                    List<double> sensitive = DetectScenesWithThreshold(path, adaptiveThreshold, Math.Max(0.5, minDuration * 0.5), startOffset, maxDuration);
-                    int before = stamps.Count;
-                    stamps = MergeAdaptiveSceneCandidates(stamps, sensitive, minDuration);
-                    if (startOffset == 0 && maxDuration == null)
-                    {
-                        Log($"  [AdaptiveDetector] 弱切点补充：{before} → {stamps.Count}");
-                    }
+                    Log($"  [AdaptiveDetector] 弱切点补充：{before} → {stamps.Count}");
                 }
+            }
 
-                return stamps;
-            });
+            return stamps;
         }
 
-        private List<double> DetectScenesWithThreshold(string path, double threshold, double minDuration, double startOffset, double? maxDuration)
+        private async Task<List<double>> DetectScenesWithThresholdAsync(
+            string path,
+            double threshold,
+            double minDuration,
+            double startOffset,
+            double? maxDuration,
+            CancellationToken cancellationToken)
         {
             List<double> t = new List<double>();
             if (startOffset == 0) t.Add(0);
 
-            string timeArgs = "";
-            if (startOffset > 0) timeArgs += $"-ss {startOffset.ToString("0.###", CultureInfo.InvariantCulture)} ";
-            if (maxDuration.HasValue) timeArgs += $"-t {maxDuration.Value.ToString("0.###", CultureInfo.InvariantCulture)} ";
-
             string thresholdText = threshold.ToString("0.###", CultureInfo.InvariantCulture);
-            string args = $"{timeArgs}-i \"{path}\" -vf \"select='gt(scene,{thresholdText})',showinfo\" -f null -";
-
-            ProcessStartInfo psi = new ProcessStartInfo
+            var startInfo = new ProcessStartInfo
             {
                 FileName = _ffmpegPath,
-                Arguments = args,
                 UseShellExecute = false,
+                RedirectStandardOutput = true,
                 RedirectStandardError = true,
-                CreateNoWindow = true
+                CreateNoWindow = true,
+                StandardOutputEncoding = System.Text.Encoding.UTF8,
+                StandardErrorEncoding = System.Text.Encoding.UTF8
             };
-
-            using (Process p = Process.Start(psi))
+            if (startOffset > 0)
             {
-                Regex r = new Regex(@"pts_time:([0-9.]+)");
-                List<string> errors = new List<string>();
-                while (!p.StandardError.EndOfStream)
-                {
-                    string l = p.StandardError.ReadLine();
-                    if (l != null) errors.Add(l);
+                startInfo.ArgumentList.Add("-ss");
+                startInfo.ArgumentList.Add(startOffset.ToString("0.###", CultureInfo.InvariantCulture));
+            }
+            if (maxDuration.HasValue)
+            {
+                startInfo.ArgumentList.Add("-t");
+                startInfo.ArgumentList.Add(maxDuration.Value.ToString("0.###", CultureInfo.InvariantCulture));
+            }
+            foreach (string argument in new[]
+            {
+                "-i", path,
+                "-vf", $"select='gt(scene,{thresholdText})',showinfo",
+                "-f", "null", "-"
+            })
+            {
+                startInfo.ArgumentList.Add(argument);
+            }
 
-                    if (l != null && l.Contains("showinfo"))
+            using Process process = Process.Start(startInfo)
+                ?? throw new InvalidOperationException("FFmpeg 场景检测进程启动失败。");
+            Task<string> stdoutTask = process.StandardOutput.ReadToEndAsync();
+            var errors = new List<string>();
+            Regex timestampPattern = new Regex(@"pts_time:([0-9.]+)");
+            try
+            {
+                while (true)
+                {
+                    string line = await process.StandardError.ReadLineAsync(cancellationToken);
+                    if (line == null) break;
+                    if (errors.Count < 200) errors.Add(line);
+
+                    if (line.Contains("showinfo"))
                     {
-                        Match m = r.Match(l);
-                        if (m.Success && double.TryParse(m.Groups[1].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out double rawVal))
+                        Match match = timestampPattern.Match(line);
+                        if (match.Success && double.TryParse(match.Groups[1].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out double rawVal))
                         {
                             double val = rawVal + startOffset;
                             if (t.Count == 0 || val - t[t.Count - 1] > minDuration)
@@ -530,11 +1148,19 @@ namespace VideoToMaterial
                         }
                     }
                 }
-                p.WaitForExit();
-                if (p.ExitCode != 0)
-                {
-                    throw new InvalidOperationException($"ffmpeg 场景检测失败 (代码 {p.ExitCode}): {string.Join("\n", errors.Take(20))}");
-                }
+                await process.WaitForExitAsync(cancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+                TryKillProcessTree(process);
+                await WaitForTerminatedProcessAsync(process);
+                try { await stdoutTask; } catch { }
+                throw;
+            }
+            await stdoutTask;
+            if (process.ExitCode != 0)
+            {
+                throw new InvalidOperationException($"ffmpeg 场景检测失败 (代码 {process.ExitCode}): {string.Join("\n", errors.Take(20))}");
             }
 
             return t;
@@ -576,38 +1202,58 @@ namespace VideoToMaterial
             }
         }
 
-        private Task<Bitmap> GetFrameAt(string path, double time)
+        private async Task<Bitmap> GetFrameAt(
+            string path,
+            double time,
+            CancellationToken cancellationToken = default)
         {
-            return Task.Run(() =>
+            string tmp = Path.Combine(Path.GetTempPath(), $"tmp_{Guid.NewGuid()}.jpg");
+            try
             {
-                string tmp = Path.Combine(Path.GetTempPath(), $"tmp_{Guid.NewGuid()}.jpg");
-                try
-                {
-                    RunFFmpeg($"-ss {time} -i \"{path}\" -vframes 1 -q:v 2 \"{tmp}\" -y");
-                    if (File.Exists(tmp))
+                await RunProcessCaptureAsync(
+                    _ffmpegPath,
+                    new[]
                     {
-                        using (var fs = new FileStream(tmp, FileMode.Open, FileAccess.Read))
+                        "-hide_banner",
+                        "-loglevel", "error",
+                        "-ss", time.ToString("0.###", CultureInfo.InvariantCulture),
+                        "-i", path,
+                        "-vframes", "1",
+                        "-q:v", "2",
+                        "-y",
+                        tmp
+                    },
+                    cancellationToken);
+                if (File.Exists(tmp))
+                {
+                    using (var fs = new FileStream(tmp, FileMode.Open, FileAccess.Read))
+                    {
+                        using (var tempBmp = new Bitmap(fs))
                         {
-                            using (var tempBmp = new Bitmap(fs))
-                            {
-                                return new Bitmap(tempBmp);
-                            }
+                            return new Bitmap(tempBmp);
                         }
                     }
                 }
-                catch (Exception ex)
-                {
-                    Debug.WriteLine($"GetFrameAt Error: {ex.Message}");
-                }
-                finally
-                {
-                    try { if (File.Exists(tmp)) File.Delete(tmp); } catch { }
-                }
-                return null;
-            });
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"GetFrameAt Error: {ex.Message}");
+            }
+            finally
+            {
+                TryDeleteFile(tmp);
+            }
+            return null;
         }
 
-        private async Task<Dictionary<int, Bitmap>> GetFramesAtAsync(string path, IReadOnlyList<double> times)
+        private async Task<Dictionary<int, Bitmap>> GetFramesAtAsync(
+            string path,
+            IReadOnlyList<double> times,
+            CancellationToken cancellationToken)
         {
             Dictionary<int, Bitmap> frames = new Dictionary<int, Bitmap>();
             if (times.Count == 0) return frames;
@@ -620,13 +1266,20 @@ namespace VideoToMaterial
             {
                 for (int offset = 0; offset < times.Count; offset += batchSize)
                 {
+                    cancellationToken.ThrowIfCancellationRequested();
                     int count = Math.Min(batchSize, times.Count - offset);
                     string batchDir = Path.Combine(root, offset.ToString(CultureInfo.InvariantCulture));
                     Directory.CreateDirectory(batchDir);
 
                     try
                     {
-                        await ExtractFrameBatchAsync(path, times, offset, count, batchDir);
+                        await ExtractFrameBatchAsync(
+                            path,
+                            times,
+                            offset,
+                            count,
+                            batchDir,
+                            cancellationToken);
                         for (int i = 0; i < count; i++)
                         {
                             string framePath = Path.Combine(batchDir, $"frame_{i + 1:0000}.jpg");
@@ -635,6 +1288,10 @@ namespace VideoToMaterial
                                 frames[offset + i] = LoadBitmap(framePath);
                             }
                         }
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        throw;
                     }
                     catch (Exception ex)
                     {
@@ -650,41 +1307,45 @@ namespace VideoToMaterial
             return frames;
         }
 
-        private Task ExtractFrameBatchAsync(string path, IReadOnlyList<double> times, int offset, int count, string batchDir)
+        private async Task ExtractFrameBatchAsync(
+            string path,
+            IReadOnlyList<double> times,
+            int offset,
+            int count,
+            string batchDir,
+            CancellationToken cancellationToken)
         {
-            return Task.Run(() =>
+            List<string> branches = new List<string>();
+            List<string> labels = new List<string>();
+
+            for (int i = 0; i < count; i++)
             {
-                List<string> branches = new List<string>();
-                List<string> labels = new List<string>();
+                string label = $"v{i}";
+                string start = Math.Max(0, times[offset + i]).ToString("0.###", CultureInfo.InvariantCulture);
+                branches.Add($"[0:v]trim=start={start}:duration=0.2,setpts=PTS-STARTPTS,select='eq(n\\,0)'[{label}]");
+                labels.Add($"[{label}]");
+            }
 
-                for (int i = 0; i < count; i++)
+            string filter = string.Join(";", branches) + ";" +
+                string.Concat(labels) +
+                $"concat=n={count}:v=1:a=0,scale=320:-2[outv]";
+
+            string outputPattern = Path.Combine(batchDir, "frame_%04d.jpg");
+            await RunProcessCaptureAsync(
+                _ffmpegPath,
+                new[]
                 {
-                    string label = $"v{i}";
-                    string start = Math.Max(0, times[offset + i]).ToString("0.###", CultureInfo.InvariantCulture);
-                    branches.Add($"[0:v]trim=start={start}:duration=0.2,setpts=PTS-STARTPTS,select='eq(n\\,0)'[{label}]");
-                    labels.Add($"[{label}]");
-                }
-
-                string filter = string.Join(";", branches) + ";" +
-                    string.Concat(labels) +
-                    $"concat=n={count}:v=1:a=0,scale=320:-2[outv]";
-
-                string outputPattern = Path.Combine(batchDir, "frame_%04d.jpg");
-                RunProcessCapture(
-                    _ffmpegPath,
-                    new[]
-                    {
-                        "-hide_banner",
-                        "-loglevel", "error",
-                        "-i", path,
-                        "-filter_complex", filter,
-                        "-map", "[outv]",
-                        "-vsync", "0",
-                        "-q:v", "2",
-                        "-y",
-                        outputPattern
-                    });
-            });
+                    "-hide_banner",
+                    "-loglevel", "error",
+                    "-i", path,
+                    "-filter_complex", filter,
+                    "-map", "[outv]",
+                    "-vsync", "0",
+                    "-q:v", "2",
+                    "-y",
+                    outputPattern
+                },
+                cancellationToken);
         }
 
         private static Bitmap LoadBitmap(string path)
@@ -696,20 +1357,286 @@ namespace VideoToMaterial
             }
         }
 
-        private Task CutVideo(string path, string outPath, double time, double duration, bool mute, EncoderProfile profile)
+        private Task CutVideo(
+            string path,
+            string outPath,
+            double time,
+            double duration,
+            bool mute,
+            EncoderProfile profile,
+            bool copyPreparedVideo = false,
+            CancellationToken cancellationToken = default)
         {
-            return Task.Run(() =>
+            return CutVideoCoreAsync();
+
+            async Task CutVideoCoreAsync()
             {
-                string hw = profile.IsHardware ? "-hwaccel auto" : "";
-                string an = mute ? "-an" : "-c:a aac";
-                string args = $"{hw} -ss {time} -i \"{path}\" -t {duration} -c:v {profile.VideoCodec} {profile.ExtraArgs} {an} -avoid_negative_ts make_zero \"{outPath}\" -y";
-                RunFFmpeg(args);
-            });
+                var attempts = new List<(bool CopyVideo, string Codec, string[] ExtraArguments, bool HardwareDecode)>();
+                if (copyPreparedVideo)
+                {
+                    attempts.Add((true, null, Array.Empty<string>(), false));
+                }
+                attempts.Add((
+                    false,
+                    profile.VideoCodec,
+                    (profile.ExtraArgs ?? "").Split(' ', StringSplitOptions.RemoveEmptyEntries),
+                    profile.IsHardware));
+                if (!string.Equals(profile.VideoCodec, "libx264", StringComparison.OrdinalIgnoreCase))
+                {
+                    attempts.Add((
+                        false,
+                        "libx264",
+                        new[] { "-preset", "veryfast", "-crf", "20" },
+                        false));
+                }
+
+                Exception lastError = null;
+                for (int attemptIndex = 0; attemptIndex < attempts.Count; attemptIndex++)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    (bool copyVideo, string codec, string[] extraArguments, bool hardwareDecode) = attempts[attemptIndex];
+                    List<string> arguments = BuildCutArguments(
+                        path,
+                        outPath,
+                        time,
+                        duration,
+                        mute,
+                        copyVideo,
+                        codec,
+                        extraArguments,
+                        hardwareDecode);
+                    try
+                    {
+                        await RunProcessCaptureAsync(
+                            _ffmpegPath,
+                            arguments,
+                            cancellationToken);
+                        (bool validOutput, string validationError) = await VideoComposerService.ValidateClipAsync(
+                            _ffmpegPath,
+                            outPath,
+                            cancellationToken);
+                        if (!validOutput)
+                        {
+                            throw new InvalidOperationException(
+                                $"切片产物无法完整解码：{validationError}");
+                        }
+                        return;
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        TryDeleteFile(outPath);
+                        throw;
+                    }
+                    catch (Exception ex)
+                    {
+                        lastError = ex;
+                        TryDeleteFile(outPath);
+                        if (attemptIndex + 1 < attempts.Count)
+                        {
+                            string failedMode = copyVideo ? "无损切片" : codec;
+                            string nextMode = attempts[attemptIndex + 1].CopyVideo
+                                ? "无损切片"
+                                : attempts[attemptIndex + 1].Codec;
+                            Log($"  [提示] {Path.GetFileName(outPath)} 使用 {failedMode} 失败，自动改用 {nextMode} 重试。");
+                        }
+                    }
+                }
+
+                string finalReason = lastError?.Message ?? "未返回具体错误。";
+                throw new InvalidOperationException(
+                    $"切片 {Path.GetFileName(outPath)} 的无损复制、首选编码器和 CPU 回退均失败。" +
+                    $" 最后一次失败原因：{finalReason}",
+                    lastError);
+            }
+        }
+
+        private static List<string> BuildCutArguments(
+            string path,
+            string outPath,
+            double time,
+            double duration,
+            bool mute,
+            bool copyVideo,
+            string videoCodec,
+            IReadOnlyList<string> extraVideoArguments,
+            bool hardwareDecode)
+        {
+            var arguments = new List<string>
+            {
+                "-hide_banner",
+                "-loglevel", "error"
+            };
+            if (!copyVideo && hardwareDecode)
+            {
+                arguments.Add("-hwaccel");
+                arguments.Add("auto");
+            }
+            arguments.Add("-ss");
+            arguments.Add(time.ToString("0.######", CultureInfo.InvariantCulture));
+            arguments.Add("-i");
+            arguments.Add(path);
+            arguments.Add("-t");
+            arguments.Add(duration.ToString("0.######", CultureInfo.InvariantCulture));
+            arguments.Add("-map");
+            arguments.Add("0:v:0");
+            arguments.Add("-c:v");
+            arguments.Add(copyVideo ? "copy" : videoCodec);
+            if (!copyVideo && extraVideoArguments != null)
+            {
+                arguments.AddRange(extraVideoArguments);
+            }
+            if (mute)
+            {
+                arguments.Add("-an");
+            }
+            else
+            {
+                arguments.Add("-map");
+                arguments.Add("0:a?");
+                arguments.Add("-c:a");
+                arguments.Add("aac");
+            }
+            arguments.Add("-avoid_negative_ts");
+            arguments.Add(copyVideo ? "disabled" : "make_zero");
+            arguments.Add("-y");
+            arguments.Add(outPath);
+            return arguments;
         }
 
         private void RunFFmpeg(string args)
         {
             RunProcessCapture(_ffmpegPath, args);
+        }
+
+        private async Task<(bool Succeeded, string Output)> TryRunProcessCaptureAsync(
+            string fileName,
+            IEnumerable<string> arguments,
+            TimeSpan timeout)
+        {
+            return await TryRunProcessCaptureAsync(
+                fileName,
+                arguments,
+                timeout,
+                CancellationToken.None);
+        }
+
+        private async Task<(bool Succeeded, string Output)> TryRunProcessCaptureAsync(
+            string fileName,
+            IEnumerable<string> arguments,
+            TimeSpan timeout,
+            CancellationToken cancellationToken)
+        {
+            if (OperatingSystem.IsWindows() && !HasPortableExecutableHeader(fileName))
+            {
+                return (false, "not a valid Windows executable");
+            }
+            try
+            {
+                var startInfo = new ProcessStartInfo
+                {
+                    FileName = fileName,
+                    UseShellExecute = false,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    CreateNoWindow = true,
+                    StandardOutputEncoding = System.Text.Encoding.UTF8,
+                    StandardErrorEncoding = System.Text.Encoding.UTF8
+                };
+                foreach (string argument in arguments) startInfo.ArgumentList.Add(argument);
+
+                using Process process = Process.Start(startInfo);
+                if (process == null) return (false, "");
+                Task<string> stdoutTask = process.StandardOutput.ReadToEndAsync();
+                Task<string> stderrTask = process.StandardError.ReadToEndAsync();
+                using var timeoutCancellation = new CancellationTokenSource(timeout);
+                using var linkedCancellation = CancellationTokenSource.CreateLinkedTokenSource(
+                    cancellationToken,
+                    timeoutCancellation.Token);
+                try
+                {
+                    await process.WaitForExitAsync(linkedCancellation.Token);
+                }
+                catch (OperationCanceledException)
+                {
+                    TryKillProcessTree(process);
+                    await WaitForTerminatedProcessAsync(process);
+                    try { await Task.WhenAll(stdoutTask, stderrTask); } catch { }
+                    if (cancellationToken.IsCancellationRequested) throw;
+                    return (false, "process timed out");
+                }
+
+                string stdout = await stdoutTask;
+                string stderr = await stderrTask;
+                return (process.ExitCode == 0, stdout + stderr);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Optional process probe failed: {ex.Message}");
+                return (false, ex.Message);
+            }
+        }
+
+        private async Task<string> RunProcessCaptureAsync(
+            string fileName,
+            IEnumerable<string> arguments,
+            CancellationToken cancellationToken)
+        {
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = fileName,
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                CreateNoWindow = true,
+                StandardOutputEncoding = System.Text.Encoding.UTF8,
+                StandardErrorEncoding = System.Text.Encoding.UTF8
+            };
+            foreach (string argument in arguments)
+            {
+                startInfo.ArgumentList.Add(argument);
+            }
+
+            using Process process = Process.Start(startInfo)
+                ?? throw new InvalidOperationException($"{Path.GetFileName(fileName)} 进程启动失败。");
+            Task<string> stdoutTask = process.StandardOutput.ReadToEndAsync();
+            Task<string> stderrTask = process.StandardError.ReadToEndAsync();
+            try
+            {
+                await process.WaitForExitAsync(cancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+                TryKillProcessTree(process);
+                await WaitForTerminatedProcessAsync(process);
+                try { await Task.WhenAll(stdoutTask, stderrTask); } catch { }
+                throw;
+            }
+
+            string output = await stdoutTask + await stderrTask;
+            if (process.ExitCode != 0)
+            {
+                string message = string.IsNullOrWhiteSpace(output) ? "无错误输出" : output.Trim();
+                throw new InvalidOperationException(
+                    $"{Path.GetFileName(fileName)} 执行失败 (代码 {process.ExitCode}): {message}");
+            }
+            return output;
+        }
+
+        private static bool HasPortableExecutableHeader(string path)
+        {
+            try
+            {
+                using FileStream stream = File.OpenRead(path);
+                return stream.ReadByte() == 'M' && stream.ReadByte() == 'Z';
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         private string RunProcessCapture(string fileName, string args, bool allowNonZeroExit = false, bool logOnError = true)

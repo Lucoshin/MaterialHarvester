@@ -7,6 +7,7 @@ namespace VideoToMaterial
     {
         public string UrlText { get; set; }
         public bool AddDownloadsToQueue { get; set; } = true;
+        public DownloadCookieOptions CookieOptions { get; set; } = new DownloadCookieOptions();
 
         public IEnumerable<string> FilesForQueue(IEnumerable<string> downloadedFiles)
         {

@@ -1,0 +1,35 @@
+<Window x:Class="VideoToMaterial.PlatformLoginWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
+        Title="平台扫码登录" Width="960" Height="720" MinWidth="760" MinHeight="560"
+        WindowStartupLocation="CenterOwner" Background="#111315" Foreground="#F5F7FA">
+    <Grid Margin="16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+        <StackPanel Margin="4,0,4,12">
+            <TextBlock x:Name="LoginTitle" FontSize="20" FontWeight="SemiBold" />
+            <TextBlock x:Name="LoginHint" Margin="0,6,0,0" Foreground="#AAB2BF" TextWrapping="Wrap" />
+        </StackPanel>
+        <Border Grid.Row="1" BorderBrush="#39424E" BorderThickness="1" CornerRadius="8" ClipToBounds="True">
+            <wv2:WebView2 x:Name="Browser" />
+        </Border>
+        <Grid Grid.Row="2" Margin="4,12,4,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <TextBlock x:Name="StatusText" Text="正在打开登录页…" VerticalAlignment="Center"
+                       Foreground="#AAB2BF" TextWrapping="Wrap" />
+            <StackPanel Grid.Column="1" Orientation="Horizontal">
+                <Button Content="清除登录状态" Click="ClearLogin_Click" Padding="14,8" Margin="0,0,8,0" />
+                <Button Content="用系统浏览器打开" Click="OpenExternal_Click" Padding="14,8" Margin="0,0,8,0" />
+                <Button Content="取消" IsCancel="True" Padding="14,8" Margin="0,0,8,0" />
+                <Button Content="我已扫码登录，继续" Click="Continue_Click" Padding="16,8" />
+            </StackPanel>
+        </Grid>
+    </Grid>
+</Window>

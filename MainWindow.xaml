@@ -61,7 +61,22 @@
                                Text="{DynamicResource Ui.QueueEmpty}"
                                FontSize="12"
                                Foreground="{StaticResource MutedTextBrush}"
-                               VerticalAlignment="Center" />
+                               VerticalAlignment="Center"
+                               Margin="0,0,20,0" />
+                    <RadioButton x:Name="SliceWorkspaceRadio"
+                                 GroupName="WorkspaceMode"
+                                 Content="{DynamicResource Ui.WorkspaceSlice}"
+                                 IsChecked="True"
+                                 Style="{StaticResource ModeRadioButton}"
+                                 Padding="16,7"
+                                 Margin="0,0,8,0"
+                                 Checked="WorkspaceMode_Checked" />
+                    <RadioButton x:Name="ComposeWorkspaceRadio"
+                                 GroupName="WorkspaceMode"
+                                 Content="{DynamicResource Ui.WorkspaceCompose}"
+                                 Style="{StaticResource ModeRadioButton}"
+                                 Padding="16,7"
+                                 Checked="WorkspaceMode_Checked" />
                 </StackPanel>
                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
                     <Button x:Name="BtnAddLink"
@@ -268,7 +283,8 @@
                 </Grid>
             </Border>
 
-            <GridSplitter Grid.Row="2"
+            <GridSplitter x:Name="SliceSourceSplitter"
+                          Grid.Row="2"
                           Height="8"
                           HorizontalAlignment="Stretch"
                           VerticalAlignment="Center"
@@ -277,7 +293,8 @@
                           ResizeDirection="Rows"
                           ResizeBehavior="PreviousAndNext" />
 
-            <Border Grid.Row="3"
+            <Border x:Name="SliceConfigPanel"
+                    Grid.Row="3"
                     CornerRadius="14"
                     Background="{StaticResource PanelBrush}"
                     BorderBrush="#27272A"
@@ -328,7 +345,24 @@
                             <StackPanel Grid.Column="0">
                                 <TextBlock Text="{DynamicResource Ui.OutputRule}" FontSize="11" Foreground="{StaticResource DimTextBrush}" Margin="0,0,0,7" />
                                 <Border Background="#18181B" BorderBrush="#2E2E33" BorderThickness="1" CornerRadius="8" Padding="12,9">
-                                    <TextBlock x:Name="PathHint" Text="{DynamicResource Ui.PathHint}" FontSize="11" Foreground="{StaticResource MutedTextBrush}" TextWrapping="Wrap" />
+                                    <StackPanel>
+                                        <RadioButton x:Name="SingleFolderOutputRadio"
+                                                     GroupName="BatchOutputRule"
+                                                     Content="{DynamicResource Ui.OutputRuleSingleFolder}"
+                                                     IsChecked="True"
+                                                     Checked="OutputRule_Checked" />
+                                        <RadioButton x:Name="PerVideoFolderOutputRadio"
+                                                     GroupName="BatchOutputRule"
+                                                     Content="{DynamicResource Ui.OutputRulePerVideo}"
+                                                     Margin="0,7,0,0"
+                                                     Checked="OutputRule_Checked" />
+                                        <TextBlock x:Name="PathHint"
+                                                   Text="{DynamicResource Ui.PathHintSingleFolder}"
+                                                   Margin="0,7,0,0"
+                                                   FontSize="10"
+                                                   Foreground="{StaticResource MutedTextBrush}"
+                                                   TextWrapping="Wrap" />
+                                    </StackPanel>
                                 </Border>
                             </StackPanel>
                             <StackPanel Grid.Column="2">
@@ -341,8 +375,21 @@
                                                       Margin="0,0,20,0" />
                                             <CheckBox x:Name="ChkRemoveSubtitles"
                                                       Content="{DynamicResource Ui.RemoveSubtitles}"
+                                                      IsEnabled="False"
                                                       Checked="RemoveSubtitles_Checked"
                                                       Unchecked="RemoveSubtitles_Checked" />
+                                            <Border Margin="10,0,0,0"
+                                                    Padding="7,2"
+                                                    Background="#242427"
+                                                    BorderBrush="#35353A"
+                                                    BorderThickness="1"
+                                                    CornerRadius="6">
+                                                <TextBlock x:Name="TxtAiEngine"
+                                                           Text="AI: —"
+                                                           FontSize="9"
+                                                           Foreground="{StaticResource DimTextBrush}"
+                                                           VerticalAlignment="Center" />
+                                            </Border>
                                         </StackPanel>
                                         <Grid Margin="0,10,0,0">
                                             <Grid.ColumnDefinitions>
@@ -394,7 +441,6 @@
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="Auto" />
-                            <RowDefinition Height="Auto" />
                         </Grid.RowDefinitions>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" />
@@ -432,7 +478,7 @@
                             </Grid>
                         </StackPanel>
 
-                        <StackPanel Grid.Row="0" Grid.Column="2">
+                        <StackPanel x:Name="DetectorPanel" Grid.Row="0" Grid.Column="2">
                             <TextBlock Text="{DynamicResource Ui.Detector}"
                                        FontSize="11"
                                        Foreground="{StaticResource DimTextBrush}"
@@ -447,6 +493,27 @@
                                               ToolTip="{DynamicResource Ui.ContentDetectorTooltip}" />
                                 <ComboBoxItem Content="{DynamicResource Ui.AdaptiveDetector}"
                                               ToolTip="{DynamicResource Ui.AdaptiveDetectorTooltip}" />
+                            </ComboBox>
+                        </StackPanel>
+
+                        <StackPanel x:Name="FixedClipSelectionPanel"
+                                    Grid.Row="0"
+                                    Grid.Column="2"
+                                    Visibility="Collapsed">
+                            <TextBlock Text="{DynamicResource Ui.FixedSelectionMode}"
+                                       FontSize="11"
+                                       Foreground="{StaticResource DimTextBrush}"
+                                       Margin="0,0,0,7"
+                                       ToolTip="{DynamicResource Ui.FixedSelectionTooltip}" />
+                            <ComboBox x:Name="FixedClipSelectionCombo"
+                                      SelectedIndex="0"
+                                      Height="38"
+                                      ToolTip="{DynamicResource Ui.FixedSelectionTooltip}"
+                                      HorizontalAlignment="Stretch">
+                                <ComboBoxItem Content="{DynamicResource Ui.FixedSelectionAutomatic}" />
+                                <ComboBoxItem Content="{DynamicResource Ui.FixedSelectionStart}" />
+                                <ComboBoxItem Content="{DynamicResource Ui.FixedSelectionStartEnd}" />
+                                <ComboBoxItem Content="{DynamicResource Ui.FixedSelectionStartMiddleEnd}" />
                             </ComboBox>
                         </StackPanel>
 
@@ -485,7 +552,259 @@
                                 </StackPanel>
                             </Grid>
                         </StackPanel>
+
                     </Grid>
+                </Grid>
+            </Border>
+
+            <Border x:Name="CompositionWorkspace"
+                    Grid.Row="1"
+                    Grid.RowSpan="3"
+                    Visibility="Collapsed"
+                    CornerRadius="14"
+                    BorderThickness="1"
+                    BorderBrush="#2E3D38"
+                    Background="#16191A"
+                    Padding="22"
+                    AllowDrop="True"
+                    Drop="CompositionWorkspace_Drop">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="14" />
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="14" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+
+                    <DockPanel Grid.Row="0">
+                        <StackPanel DockPanel.Dock="Left">
+                            <TextBlock Text="{DynamicResource Ui.CompositionTitle}"
+                                       FontSize="20"
+                                       FontWeight="SemiBold"
+                                       Foreground="#F4F4F5" />
+                            <TextBlock Text="{DynamicResource Ui.CompositionSubtitle}"
+                                       Margin="0,5,0,0"
+                                       FontSize="11"
+                                       Foreground="{StaticResource MutedTextBrush}" />
+                        </StackPanel>
+                        <Border DockPanel.Dock="Right"
+                                Background="#123D32"
+                                BorderBrush="#1F8065"
+                                BorderThickness="1"
+                                CornerRadius="12"
+                                Padding="14,8"
+                                VerticalAlignment="Center">
+                            <TextBlock x:Name="CompositionStatusText"
+                                       Text="{DynamicResource Ui.CompositionReady}"
+                                       Foreground="#A7F3D0"
+                                       FontWeight="SemiBold"
+                                       FontSize="11" />
+                        </Border>
+                    </DockPanel>
+
+                    <Grid Grid.Row="2">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="11*" />
+                            <ColumnDefinition Width="16" />
+                            <ColumnDefinition Width="9*" />
+                        </Grid.ColumnDefinitions>
+
+                        <Border Grid.Column="0"
+                                Background="#181A1D"
+                                BorderBrush="#2B3034"
+                                BorderThickness="1"
+                                CornerRadius="12"
+                                Padding="16">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="12" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+                                <DockPanel Grid.Row="0">
+                                    <StackPanel DockPanel.Dock="Left">
+                                        <TextBlock Text="{DynamicResource Ui.ClipLibrary}" FontSize="13" FontWeight="SemiBold" />
+                                        <TextBlock x:Name="CompositionLibrarySummary"
+                                                   Text="{DynamicResource Ui.ClipLibraryEmpty}"
+                                                   Margin="0,4,0,0"
+                                                   FontSize="10"
+                                                   Foreground="{StaticResource DimTextBrush}" />
+                                    </StackPanel>
+                                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                                        <Button x:Name="BtnCompositionAddFiles"
+                                                Style="{StaticResource SecondaryButton}"
+                                                Content="{DynamicResource Ui.AddClipFiles}"
+                                                Padding="12,7"
+                                                Margin="0,0,8,0"
+                                                Click="CompositionAddFiles_Click" />
+                                        <Button x:Name="BtnCompositionAddFolder"
+                                                Style="{StaticResource SecondaryButton}"
+                                                Content="{DynamicResource Ui.AddClipFolder}"
+                                                Padding="12,7"
+                                                Click="CompositionAddFolder_Click" />
+                                    </StackPanel>
+                                </DockPanel>
+                                <Grid Grid.Row="2">
+                                    <Border x:Name="CompositionEmptyPanel"
+                                            BorderBrush="#39413E"
+                                            BorderThickness="1"
+                                            CornerRadius="10"
+                                            Background="#101314"
+                                            Padding="24">
+                                        <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                                            <TextBlock Text="＋" FontSize="32" Foreground="#34D399" HorizontalAlignment="Center" />
+                                            <TextBlock Text="{DynamicResource Ui.CompositionDropTitle}"
+                                                       Margin="0,8,0,0"
+                                                       FontWeight="SemiBold"
+                                                       HorizontalAlignment="Center" />
+                                            <TextBlock Text="{DynamicResource Ui.CompositionDropHint}"
+                                                       Margin="0,5,0,0"
+                                                       FontSize="10"
+                                                       Foreground="{StaticResource DimTextBrush}"
+                                                       HorizontalAlignment="Center" />
+                                        </StackPanel>
+                                    </Border>
+                                    <ListBox x:Name="CompositionLibraryList"
+                                             Visibility="Collapsed"
+                                             Background="#101314"
+                                             BorderBrush="#2B3034"
+                                             BorderThickness="1"
+                                             Padding="6"
+                                             ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                                        <ListBox.ItemTemplate>
+                                            <DataTemplate>
+                                                <Grid Margin="5,4">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="34" />
+                                                        <ColumnDefinition Width="*" />
+                                                        <ColumnDefinition Width="Auto" />
+                                                    </Grid.ColumnDefinitions>
+                                                    <Border Width="28" Height="28" CornerRadius="7" Background="#123D32">
+                                                        <TextBlock Text="▶" Foreground="#6EE7B7" FontSize="10" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                                    </Border>
+                                                    <StackPanel Grid.Column="1" Margin="10,0,12,0" VerticalAlignment="Center">
+                                                        <TextBlock Text="{Binding Name}" FontSize="11" TextTrimming="CharacterEllipsis" />
+                                                        <TextBlock Text="{Binding Directory}" FontSize="9" Foreground="{StaticResource DimTextBrush}" TextTrimming="CharacterEllipsis" />
+                                                    </StackPanel>
+                                                    <TextBlock Grid.Column="2" Text="{Binding Extension}" Foreground="#6EE7B7" FontSize="9" VerticalAlignment="Center" />
+                                                </Grid>
+                                            </DataTemplate>
+                                        </ListBox.ItemTemplate>
+                                    </ListBox>
+                                </Grid>
+                            </Grid>
+                        </Border>
+
+                        <ScrollViewer Grid.Column="2" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                            <StackPanel>
+                                <Border Background="#181A1D" BorderBrush="#2B3034" BorderThickness="1" CornerRadius="12" Padding="16">
+                                    <StackPanel>
+                                        <TextBlock Text="{DynamicResource Ui.CompositionSettings}" FontSize="13" FontWeight="SemiBold" Margin="0,0,0,12" />
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="10" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel Grid.Column="0">
+                                                <TextBlock Text="{DynamicResource Ui.OutputVideoCount}" FontSize="10" Foreground="{StaticResource DimTextBrush}" Margin="0,0,0,6" />
+                                                <TextBox x:Name="TxtCompositionOutputCount" Text="100" TextChanged="CompositionParameter_TextChanged" />
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="2">
+                                                <TextBlock Text="{DynamicResource Ui.ClipsPerVideo}" FontSize="10" Foreground="{StaticResource DimTextBrush}" Margin="0,0,0,6" />
+                                                <TextBox x:Name="TxtCompositionClipsPerOutput" Text="50" TextChanged="CompositionParameter_TextChanged" />
+                                            </StackPanel>
+                                        </Grid>
+                                        <Grid Margin="0,10,0,0">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="10" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel Grid.Column="0">
+                                                <TextBlock Text="{DynamicResource Ui.RandomSeed}" FontSize="10" Foreground="{StaticResource DimTextBrush}" Margin="0,0,0,6" />
+                                                <TextBox x:Name="TxtCompositionSeed" Text="20260813" />
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="2">
+                                                <TextBlock Text="{DynamicResource Ui.Threads}" FontSize="10" Foreground="{StaticResource DimTextBrush}" Margin="0,0,0,6" />
+                                                <TextBox x:Name="TxtCompositionThreads" Text="2" />
+                                            </StackPanel>
+                                        </Grid>
+                                        <Border Margin="0,12,0,0" Background="#10241F" BorderBrush="#28594C" BorderThickness="1" CornerRadius="8" Padding="10">
+                                            <TextBlock Text="{DynamicResource Ui.NoDuplicateGuarantee}" Foreground="#A7F3D0" FontSize="10" TextWrapping="Wrap" />
+                                        </Border>
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Margin="0,12,0,0" Background="#181A1D" BorderBrush="#2B3034" BorderThickness="1" CornerRadius="12" Padding="16">
+                                    <StackPanel>
+                                        <TextBlock Text="{DynamicResource Ui.CompositionOutput}" FontSize="13" FontWeight="SemiBold" Margin="0,0,0,10" />
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="8" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBox x:Name="TxtCompositionOutputDir" Grid.Column="0" IsReadOnly="True" Text="{DynamicResource Ui.SelectOutputDir}" />
+                                            <Button Grid.Column="2" Style="{StaticResource SecondaryButton}" Content="{DynamicResource Ui.Browse}" Padding="12,7" Click="CompositionBrowseOutput_Click" />
+                                        </Grid>
+                                        <CheckBox x:Name="ChkCompositionMute" Content="{DynamicResource Ui.Mute}" Margin="0,10,0,0" />
+                                    </StackPanel>
+                                </Border>
+
+                                <Grid Margin="0,12,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="8" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <Border Grid.Column="0" Background="#10241F" CornerRadius="10" Padding="12">
+                                        <StackPanel>
+                                            <TextBlock Text="{DynamicResource Ui.AverageReuse}" FontSize="9" Foreground="#6EE7B7" />
+                                            <TextBlock x:Name="CompositionAverageReuse" Text="0" FontSize="18" FontWeight="SemiBold" Margin="0,3,0,0" />
+                                        </StackPanel>
+                                    </Border>
+                                    <Border Grid.Column="2" Background="#202019" CornerRadius="10" Padding="12">
+                                        <StackPanel>
+                                            <TextBlock Text="{DynamicResource Ui.TotalOutputDuration}" FontSize="9" Foreground="#FCD34D" />
+                                            <TextBlock x:Name="CompositionTotalDuration" Text="0 h" FontSize="18" FontWeight="SemiBold" Margin="0,3,0,0" />
+                                        </StackPanel>
+                                    </Border>
+                                </Grid>
+                                <TextBlock x:Name="CompositionRiskText" Margin="2,10,2,0" FontSize="10" Foreground="#FBBF24" TextWrapping="Wrap" />
+                            </StackPanel>
+                        </ScrollViewer>
+                    </Grid>
+
+                    <DockPanel Grid.Row="4">
+                        <Button x:Name="BtnCompositionClear"
+                                DockPanel.Dock="Left"
+                                Style="{StaticResource GhostDangerButton}"
+                                Content="{DynamicResource Ui.ClearClipLibrary}"
+                                Click="CompositionClear_Click" />
+                        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                            <Button x:Name="BtnCompositionCancel"
+                                    Style="{StaticResource GhostDangerButton}"
+                                    Content="{DynamicResource Ui.CancelComposition}"
+                                    Visibility="Collapsed"
+                                    MinWidth="105"
+                                    Margin="0,0,10,0"
+                                    Click="CompositionCancel_Click" />
+                            <Button x:Name="BtnCompositionCheck"
+                                    Style="{StaticResource SecondaryButton}"
+                                    Content="{DynamicResource Ui.CheckCompositionPlan}"
+                                    MinWidth="130"
+                                    Margin="0,0,10,0"
+                                    Click="CompositionCheck_Click" />
+                            <Button x:Name="BtnCompositionStart"
+                                    Style="{StaticResource PrimaryButton}"
+                                    Content="{DynamicResource Ui.StartComposition}"
+                                    MinWidth="180"
+                                    IsEnabled="False"
+                                    Click="CompositionStart_Click" />
+                        </StackPanel>
+                    </DockPanel>
                 </Grid>
             </Border>
 

@@ -1,0 +1,33 @@
+FFmpeg / ffprobe corresponding-source information
+=================================================
+
+Distributed binaries
+--------------------
+Material Harvester redistributes ffmpeg.exe and ffprobe.exe from the official
+Gyan FFmpeg 9.0.1 essentials static Windows build. The build is licensed under
+GNU GPL version 3. The complete license text and the build's original README
+are included next to this notice.
+
+Binary build archive:
+https://www.gyan.dev/ffmpeg/builds/packages/ffmpeg-9.0.1-essentials_build.zip
+
+Archive SHA-256 calculated after HTTPS download:
+fec81ae03971d9dd4be3ebe02e263bd2ec1d789483f931bdba5f5715e65da2e9
+
+Corresponding FFmpeg source identified by the distributor
+----------------------------------------------------------
+The original Gyan README identifies this exact FFmpeg source commit:
+https://github.com/FFmpeg/FFmpeg/commit/bf1b838f2a
+
+Source archive endpoint for that exact commit:
+https://github.com/FFmpeg/FFmpeg/archive/bf1b838f2a.tar.gz
+
+Gyan build project, current/archived binaries, build information and source
+links:
+https://www.gyan.dev/ffmpeg/builds/
+https://github.com/GyanD/codexffmpeg
+
+The bundled FFmpeg-Gyan-9.0.1-README.txt contains the exact enabled libraries,
+programs, codecs, filters and build configuration reported by the distributor.
+Material Harvester invokes these executables as separate command-line programs;
+they are not linked into the MIT-licensed application binary.
